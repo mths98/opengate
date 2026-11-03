@@ -147,20 +147,33 @@ def gamos_water_delta(e):
 
 
 def test_gamos():
+    # Divergence measurement (not a pass/fail against the GAMOS value): the
+    # linear interpolation of the original code on a 0.6 keV grid errs ~1 %
+    # below 10 keV because delta ~ E^-2. Eq. 21 is checked against an exact
+    # log-log reference, and the GAMOS recipe is bounded against Eq. 21.
     energies = np.array([5, 10, 16.5, 20, 30, 60, 100, 140])
     grid = default_energy_grid_keV()
     mine = interpolate_delta(
         grid, eq21(["H", "O"], [0.1119, 0.8881], 1.0, grid), energies
     )
-    gamos = gamos_water_delta(energies)
-    diff = np.abs(mine / gamos - 1.0)
-    ok = bool(np.all(diff < 0.005))
-    utility.print_test(
-        ok,
-        f"water vs GAMOS recipe: max rel. diff {diff.max():.3e} "
-        f"({', '.join(f'{x:.2e}' for x in diff)})",
+    exact = sum(
+        w * interpolate_delta(*read_element_delta(s), energies) / ELEMENT_DENSITY[s]
+        for s, w in [("H", 0.1119), ("O", 0.8881)]
     )
-    return ok
+    gamos = gamos_water_delta(energies)
+    d_exact = np.abs(mine / exact - 1.0)
+    d_gamos = np.abs(gamos / mine - 1.0)
+    print("  E (keV)   |eq21/exact-1|   |gamos/eq21-1|")
+    for e, a, b in zip(energies, d_exact, d_gamos):
+        print(f"  {e:7.1f}   {a:13.3e}   {b:13.3e}")
+    limit = np.where(energies >= 10, 0.005, 0.02)
+    ok_i = bool(np.all(d_exact < 1e-6))
+    ok_ii = bool(np.all(d_gamos <= limit))
+    utility.print_test(ok_i, f"water Eq. 21 vs exact log-log: max {d_exact.max():.3e}")
+    utility.print_test(
+        ok_ii, f"GAMOS recipe vs Eq. 21: max {d_gamos.max():.3e} (<=0.005 above 10 keV, <=0.02 at 5 keV)"
+    )
+    return ok_i and ok_ii
 
 
 if __name__ == "__main__":
