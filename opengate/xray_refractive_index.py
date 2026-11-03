@@ -264,7 +264,7 @@ def apply_xray_rindex(g4_materials, data_dir=None, energy_grid_keV=None):
             mpt = g4.G4MaterialPropertiesTable()
         elif (
             mpt.GetPropertyValues("RINDEX") is not None
-            and _xray_rindex_tables.get(name) is None
+            and _xray_rindex_tables.get(name) is not mpt
         ):
             fatal(
                 f"X-ray refractive index: material '{name}' already has a "
