@@ -3,6 +3,16 @@
 The refractive index of a material is n = 1 - delta + i*beta. The tables in
 ``opengate/data/complex_refractive_index/`` give, for each element, the energy
 (keV), delta and beta. Only delta is read here.
+
+The delta of a compound follows the mass-fraction mixing rule of Eq. 21 of
+Sanchez-Lara et al., Physica Medica 142 (2026) 105716.
+
+Divergence D17 with respect to the PCI-GAMOS code (anomalous dispersion):
+the tables of 16 elements (As, Dy, Er, Eu, Ga, Gd, Ge, Hf, Ho, Lu, Pm, Sm, Tb,
+Tm, Yb, Zn) have delta <= 0 between 1.0 and 1.7 keV, close to the L/M
+absorption edges. This is real physics (RINDEX > 1), so it is not an error.
+The interpolation is log-log in the segments where both nodes have delta > 0
+and linear in delta against log(E) in the other segments.
 """
 
 import pathlib
@@ -81,18 +91,19 @@ def _warn_extrapolation(label, side, e_requested, energies, edge_value):
 
 
 def interpolate_delta(energies_keV, delta, e_keV, label=None):
-    """Log-log interpolation of delta at e_keV, clamped outside the table.
+    """Interpolate delta at e_keV, clamped outside the table.
+
+    The interpolation is done segment by segment. If both nodes of a segment
+    have delta > 0, it is log-log. If at least one has delta <= 0 (anomalous
+    dispersion near absorption edges, e.g. 1.0-1.7 keV for Gd or Zn), it is
+    linear in delta against log(E), because the logarithm of delta is not
+    defined there. A negative delta is physical (RINDEX > 1) and not an error.
 
     A warning is issued once per (label, side) when a requested energy lies
     outside the tabulated range.
     """
     energies = np.asarray(energies_keV, dtype=float)
     delta = np.asarray(delta, dtype=float)
-    if np.any(delta <= 0):
-        fatal(
-            "X-ray refractive index: delta must be strictly positive for the "
-            f"log-log interpolation (table '{label}')."
-        )
     e = np.asarray(e_keV, dtype=float)
     if label is None:
         label = "table"
@@ -101,9 +112,20 @@ def interpolate_delta(energies_keV, delta, e_keV, label=None):
         _warn_extrapolation(label, "below", e_min, energies, delta[0])
     if e_max > energies[-1]:
         _warn_extrapolation(label, "above", e_max, energies, delta[-1])
+    if len(energies) == 1:
+        return np.full(e.shape, delta[0])
 
-    e_clamped = np.clip(e, energies[0], energies[-1])
-    result = np.exp(np.interp(np.log(e_clamped), np.log(energies), np.log(delta)))
+    log_e = np.log(energies)
+    x = np.log(np.clip(e, energies[0], energies[-1]))
+    i = np.clip(np.searchsorted(log_e, x, side="right") - 1, 0, len(energies) - 2)
+    t = (x - log_e[i]) / (log_e[i + 1] - log_e[i])
+    d0, d1 = delta[i], delta[i + 1]
+    linear = (1.0 - t) * d0 + t * d1
+    positive = (d0 > 0) & (d1 > 0)
+    safe0 = np.where(positive, d0, 1.0)
+    safe1 = np.where(positive, d1, 1.0)
+    loglog = np.exp((1.0 - t) * np.log(safe0) + t * np.log(safe1))
+    result = np.where(positive, loglog, linear)
     # exact edge values (avoid round-off of exp(log(x)))
     result = np.where(e <= energies[0], delta[0], result)
     result = np.where(e >= energies[-1], delta[-1], result)
@@ -168,9 +190,17 @@ def apply_xray_rindex(g4_materials, data_dir=None, energy_grid_keV=None):
     each pure element (the NIST material G4_<symbol>).
 
     If a material has no property table, one is created. If it has one without
-    RINDEX, RINDEX is added to it. If it already has RINDEX written by a
-    previous call (module registry), it is replaced; any other existing RINDEX
-    (e.g. optical) is fatal.
+    RINDEX, RINDEX is added to it. If it already has a RINDEX, it is replaced
+    only when the table attached to the material is the very one written by a
+    previous call (module registry, checked by identity); any other existing
+    RINDEX (e.g. optical, or a foreign table attached afterwards) is fatal.
+    A delta <= 0 in the result (anomalous dispersion) is physical and kept.
+
+    Side effects of Geant4: ``AddProperty("RINDEX")`` makes Geant4 compute
+    GROUPVEL from RINDEX automatically. This does not affect gammas (only
+    optical photons use it). Re-applying RINDEX leaks the previous vector,
+    which is negligible.
+
     Returns a dict {material name: property table}; the caller must keep it so
     that the tables stay alive.
     """

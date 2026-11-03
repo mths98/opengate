@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import pathlib
+import re
+
 import numpy as np
 
 from opengate.logger import logger
@@ -102,6 +105,57 @@ def test_loglog():
     return ok
 
 
+def test_negative_delta_segment():
+    """Segments with delta <= 0 are linear in delta against log(E)."""
+    E = np.array([1.0, 2.0, 4.0, 8.0])
+    d = np.array([1e-4, -1e-4, 2e-5, 1e-6])
+    # inside the segment that crosses zero: linear in log(E)
+    x = np.sqrt(2.0)
+    v = interpolate_delta(E, d, x)
+    ok = np.isclose(v, 0.0, atol=1e-18)
+    x = 2.0 ** 0.25
+    v = interpolate_delta(E, d, x)
+    t = 0.25
+    ref = (1 - t) * 1e-4 + t * (-1e-4)
+    ok = ok and np.isclose(v, ref, rtol=1e-12, atol=0)
+    # nodes are exact, and the all-positive segment stays log-log
+    ok = ok and np.allclose(interpolate_delta(E, d, E), d, rtol=1e-12, atol=0)
+    y = 2.0 ** 2.5
+    v2 = interpolate_delta(E, d, y)
+    ok = ok and np.isclose(v2, np.sqrt(2e-5 * 1e-6), rtol=1e-10)
+    # the segment with one positive and one negative node is also linear
+    v3 = interpolate_delta(E, d, 2.0 ** 1.5)
+    ok = ok and np.isclose(v3, 0.5 * (-1e-4 + 2e-5), rtol=1e-12)
+    utility.print_test(ok, f"segment crossing zero: linear in log(E) ({v}, {v3})")
+    return ok
+
+
+def test_all_elements_finite():
+    """Every element table interpolates on the default grid without NaN."""
+    grid = default_energy_grid_keV()
+    symbols = sorted(
+        f.stem
+        for f in pathlib.Path(DEFAULT_REFRACTIVE_INDEX_DATA_DIR).glob("*.txt")
+        if re.fullmatch(r"[A-Z][a-z]?", f.stem)
+    )
+    bad = []
+    n_negative = 0
+    for symbol in symbols:
+        E, d = read_element_delta(symbol)
+        v = interpolate_delta(E, d, grid, label=symbol)
+        if not np.all(np.isfinite(v)):
+            bad.append(symbol)
+        if np.any(d <= 0):
+            n_negative += 1
+    ok = len(symbols) > 90 and not bad
+    utility.print_test(
+        ok,
+        f"{len(symbols)} element tables finite on the grid "
+        f"({n_negative} with delta <= 0 nodes), bad: {bad}",
+    )
+    return ok
+
+
 def test_energy_grid():
     g = default_energy_grid_keV()
     r = g[1:] / g[:-1]
@@ -134,6 +188,8 @@ if __name__ == "__main__":
     is_ok = test_nodes_and_clamp() and is_ok
     is_ok = test_extrapolation_warning() and is_ok
     is_ok = test_loglog() and is_ok
+    is_ok = test_negative_delta_segment() and is_ok
+    is_ok = test_all_elements_finite() and is_ok
     is_ok = test_energy_grid() and is_ok
     is_ok = test_custom_dir(paths) and is_ok
     utility.test_ok(is_ok)
