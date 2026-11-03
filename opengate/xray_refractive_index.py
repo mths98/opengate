@@ -105,3 +105,46 @@ def interpolate_delta(energies_keV, delta, e_keV, label=None):
     result = np.where(e <= energies[0], delta[0], result)
     result = np.where(e >= energies[-1], delta[-1], result)
     return result
+
+
+def compound_delta(
+    symbols,
+    mass_fractions,
+    density_g_cm3,
+    element_densities_g_cm3,
+    energy_grid_keV,
+    data_dir=None,
+):
+    """Delta of a compound on an energy grid, by the mass-fraction mixing rule.
+
+    delta(E) = rho * sum_i w_i * delta_i(E) / rho_i   (Eq. 21)
+
+    where w_i is the mass fraction and rho_i the density of the pure element i,
+    and rho the density of the compound (g/cm3). The mass fractions are not
+    renormalized. The element tables are interpolated log-log on the grid.
+    """
+    n = len(symbols)
+    if len(mass_fractions) != n or len(element_densities_g_cm3) != n:
+        fatal(
+            "X-ray refractive index: symbols, mass fractions and element "
+            f"densities must have the same length (got {n}, "
+            f"{len(mass_fractions)}, {len(element_densities_g_cm3)})."
+        )
+    if n == 0:
+        fatal("X-ray refractive index: a compound needs at least one element.")
+    if not density_g_cm3 > 0:
+        fatal(
+            "X-ray refractive index: the compound density must be positive "
+            f"(got {density_g_cm3})."
+        )
+    grid = np.asarray(energy_grid_keV, dtype=float)
+    result = np.zeros_like(grid)
+    for symbol, w, rho_i in zip(symbols, mass_fractions, element_densities_g_cm3):
+        if not rho_i > 0:
+            fatal(
+                f"X-ray refractive index: the density of element '{symbol}' "
+                f"must be positive (got {rho_i})."
+            )
+        energies, delta = read_element_delta(symbol, data_dir)
+        result += w * interpolate_delta(energies, delta, grid, label=symbol) / rho_i
+    return density_g_cm3 * result
