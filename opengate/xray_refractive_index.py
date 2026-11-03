@@ -9,7 +9,10 @@ import pathlib
 
 import numpy as np
 
+import opengate_core as g4
+
 from .exception import fatal, warning
+from .utility import g4_units
 
 DEFAULT_REFRACTIVE_INDEX_DATA_DIR = (
     pathlib.Path(__file__).resolve().parent / "data" / "complex_refractive_index"
@@ -148,3 +151,53 @@ def compound_delta(
         energies, delta = read_element_delta(symbol, data_dir)
         result += w * interpolate_delta(energies, delta, grid, label=symbol) / rho_i
     return density_g_cm3 * result
+
+
+def apply_xray_rindex(g4_materials, data_dir=None, energy_grid_keV=None):
+    """Store RINDEX = 1 - delta in the property table of each G4Material.
+
+    delta follows the mass-fraction mixing rule (Eq. 21), computed from the
+    elements of the material (G4Element symbol, not name) and the density of
+    each pure element (the NIST material G4_<symbol>).
+
+    If a material has no property table, one is created. If it has one without
+    RINDEX, RINDEX is added to it. If it already has RINDEX, this is fatal.
+    Returns a dict {material name: property table}; the caller must keep it so
+    that the tables stay alive.
+    """
+    grid = default_energy_grid_keV() if energy_grid_keV is None else energy_grid_keV
+    grid = np.asarray(grid, dtype=float)
+    keV = g4_units.keV
+    g_cm3 = g4_units.g / g4_units.cm3
+    nist = g4.G4NistManager.Instance()
+    tables = {}
+    for mat in g4_materials:
+        name = str(mat.GetName())
+        mpt = mat.GetMaterialPropertiesTable()
+        if mpt is None:
+            mpt = g4.G4MaterialPropertiesTable()
+        elif mpt.GetPropertyValues("RINDEX") is not None:
+            fatal(
+                f"X-ray refractive index: material '{name}' already has a "
+                "RINDEX property in its material properties table."
+            )
+        n = mat.GetNumberOfElements()
+        symbols = [str(mat.GetElement(i).GetSymbol()) for i in range(n)]
+        fractions = [mat.GetElementFraction(i) for i in range(n)]
+        rho_i = []
+        for symbol in symbols:
+            pure = nist.FindOrBuildMaterial("G4_" + symbol)
+            if pure is None:
+                fatal(
+                    f"X-ray refractive index: cannot find the NIST material "
+                    f"'G4_{symbol}' to get the density of element '{symbol}' "
+                    f"(material '{name}')."
+                )
+            rho_i.append(pure.GetDensity() / g_cm3)
+        delta = compound_delta(
+            symbols, fractions, mat.GetDensity() / g_cm3, rho_i, grid, data_dir
+        )
+        mpt.AddProperty("RINDEX", list(grid * keV), list(1.0 - delta), False, False)
+        mat.SetMaterialPropertiesTable(mpt)
+        tables[name] = mpt
+    return tables
