@@ -48,6 +48,24 @@ void init_G4MaterialPropertiesTable(py::module &m) {
           },
           py::return_value_policy::reference_internal)
 
+      .def(
+          "GetPropertyValues",
+          [](const G4MaterialPropertiesTable &mpt,
+             const G4String &key) -> py::object {
+            const auto *vec = mpt.GetProperty(key);
+            if (vec == nullptr) {
+              return py::none();
+            }
+            py::list energies;
+            py::list values;
+            for (std::size_t i = 0; i < vec->GetVectorLength(); ++i) {
+              energies.append(vec->Energy(i));
+              values.append((*vec)[i]);
+            }
+            return py::make_tuple(energies, values);
+          },
+          py::arg("key"))
+
       .def("DumpTable", &G4MaterialPropertiesTable::DumpTable)
 
       .def("GetMaterialPropertyNames",
