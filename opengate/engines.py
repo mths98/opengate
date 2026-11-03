@@ -382,6 +382,7 @@ class PhysicsEngine(EngineBase):
         self.initialize_dna_physics_regions()
         self.initialize_g4_em_parameters()
         self.initialize_user_limits_physics()
+        self.initialize_xray_refraction_physics()
         self.initialize_physics_biasing()
         self.initialize_parallel_world_physics()
 
@@ -622,16 +623,49 @@ class PhysicsEngine(EngineBase):
         self.g4_xray_rindex_tables = apply_xray_rindex(
             materials, data_dir=ui.xray_refractive_index_data_dir
         )
-        # tables are tabulated up to 150 keV (mono-energetic sources only)
+        self.warn_sources_above_xray_table_limit(simulation)
+
+    @staticmethod
+    def get_source_max_energy(energy):
+        """Return the maximum energy of a source energy description, or None
+        when it cannot be determined from the user parameters.
+
+        Fields used per energy type: mono and gauss: mono; range: max_energy;
+        histogram: histogram_energy; spectrum_discrete: spectrum_energies;
+        spectrum_histogram: spectrum_energy_bin_edges."""
+        if energy.type in ("mono", "gauss"):
+            return energy.mono
+        if energy.type == "range":
+            return energy.max_energy
+        fields = {
+            "histogram": "histogram_energy",
+            "spectrum_discrete": "spectrum_energies",
+            "spectrum_histogram": "spectrum_energy_bin_edges",
+        }
+        if energy.type in fields and len(energy[fields[energy.type]]) > 0:
+            return max(energy[fields[energy.type]])
+        return None
+
+    def warn_sources_above_xray_table_limit(self, simulation):
+        """The refractive index is tabulated up to 150 keV: warn once per
+        source whose maximum energy is above, or cannot be determined."""
+        limit = 150 * g4_units.keV
         for source in simulation.source_manager.sources.values():
             energy = getattr(source, "energy", None)
-            if (
-                energy is not None
-                and energy.type == "mono"
-                and energy.mono > 150 * g4_units.keV
-            ):
+            if energy is None:
+                continue
+            max_energy = self.get_source_max_energy(energy)
+            if max_energy is None:
                 simulation.warn_user(
-                    f"Source '{source.name}' has an energy above 150 keV: the "
+                    f"Source '{source.name}' has an energy of type "
+                    f"'{energy.type}': its maximum energy is unknown and the "
+                    "X-ray refractive index is tabulated up to 150 keV only "
+                    "(the value at 150 keV is used beyond)."
+                )
+            elif max_energy > limit:
+                simulation.warn_user(
+                    f"Source '{source.name}' has an energy above 150 keV "
+                    f"(maximum {max_energy / g4_units.keV:g} keV): the "
                     "X-ray refractive index is tabulated up to 150 keV and the "
                     "value at 150 keV is used beyond."
                 )
@@ -702,6 +736,26 @@ class PhysicsEngine(EngineBase):
             particles_to_consider, flag_all, flag_all_charged
         )
         self.g4_augmented_physics_list.RegisterPhysics(user_limits_physics)
+
+    def initialize_xray_refraction_physics(self):
+        """Register the X-ray refraction process (Snell's law at the volume
+        boundaries) for gammas. Does nothing unless the user option
+        xray_phase_contrast is True."""
+        ui = self.user_info_physics_manager
+        if not ui.xray_phase_contrast:
+            return
+        if ui.xray_surface_roughness_sigma < 0:
+            fatal(
+                "The option xray_surface_roughness_sigma must be >= 0, "
+                f"but is {ui.xray_surface_roughness_sigma}."
+            )
+        # The physics constructor is implemented in C++, so that Geant4 can
+        # call ConstructProcess on each worker thread without the GIL.
+        # The physics list owns the object and deletes it with itself.
+        refraction_physics = g4.GateXRayRefractionPhysics(
+            ui.xray_surface_roughness_sigma
+        )
+        self.g4_augmented_physics_list.RegisterPhysics(refraction_physics)
 
     def check_user_limits_particles(self):
         """Check the requested user-limit particles once Geant4 has built them.

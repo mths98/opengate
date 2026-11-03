@@ -755,10 +755,19 @@ class PhysicsManager(GateObject):
                 "doc": "If True, the X-ray refractive index n = 1 - delta is "
                 "stored as RINDEX in the material properties table of the "
                 "materials used by the volumes. This is the single switch for "
-                "X-ray phase contrast: the same switch will also enable the "
-                "X-ray refraction process. Tables are tabulated between 1 and 150 keV. "
-                "The warning about sources above 150 keV only covers "
-                "mono-energetic sources.",
+                "X-ray phase contrast: the same switch also enables the "
+                "X-ray refraction process (Snell's law at volume boundaries). "
+                "Tables are tabulated between 1 and 150 keV: a warning is "
+                "issued for sources whose maximum energy is above 150 keV.",
+            },
+        ),
+        "xray_surface_roughness_sigma": (
+            0.0,
+            {
+                "doc": "Standard deviation (in rad) of the random tilt of the "
+                "surface normal in the X-ray refraction process, used to "
+                "model surface roughness. 0 (default) switches the roughness "
+                "off. Must be >= 0. Only used if xray_phase_contrast is True.",
             },
         ),
         "xray_refractive_index_data_dir": (
