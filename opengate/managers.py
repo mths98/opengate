@@ -756,7 +756,9 @@ class PhysicsManager(GateObject):
                 "stored as RINDEX in the material properties table of the "
                 "materials used by the volumes. This is the single switch for "
                 "X-ray phase contrast: the same switch will also enable the "
-                "X-ray refraction process. Tables are tabulated between 1 and 150 keV.",
+                "X-ray refraction process. Tables are tabulated between 1 and 150 keV. "
+                "The warning about sources above 150 keV only covers "
+                "mono-energetic sources.",
             },
         ),
         "xray_refractive_index_data_dir": (
