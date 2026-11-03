@@ -78,6 +78,49 @@ def read_element_delta(symbol, data_dir=None):
     return energies, delta
 
 
+REFERENCE_DENSITIES_FILE = "reference_densities.txt"
+
+
+def read_reference_densities(data_dir=None):
+    """Read the elements whose reference density differs from G4_<symbol>.
+
+    The file ``reference_densities.txt`` (lines ``symbol density_g_cm3``, ``#``
+    starts a comment) is searched in data_dir, or in the folder shipped with
+    the package if data_dir is None. If it does not exist there, there is no
+    override and an empty dict is returned.
+    """
+    folder = (
+        DEFAULT_REFRACTIVE_INDEX_DATA_DIR
+        if data_dir is None
+        else pathlib.Path(data_dir)
+    )
+    path = folder.expanduser().resolve() / REFERENCE_DENSITIES_FILE
+    if not path.is_file():
+        return {}
+    densities = {}
+    for line in path.read_text().splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        fields = line.split()
+        try:
+            if len(fields) != 2:
+                raise ValueError
+            value = float(fields[1])
+        except ValueError:
+            fatal(
+                f"X-ray refractive index: invalid line '{line}' in '{path}'; "
+                "expected 'symbol density_g_cm3'."
+            )
+        if not value > 0:
+            fatal(
+                f"X-ray refractive index: the density of '{fields[0]}' in "
+                f"'{path}' must be positive (got {value})."
+            )
+        densities[fields[0]] = value
+    return densities
+
+
 def _warn_extrapolation(label, side, e_requested, energies, edge_value):
     key = (label, side)
     if key in _extrapolation_warned:
@@ -187,7 +230,10 @@ def apply_xray_rindex(g4_materials, data_dir=None, energy_grid_keV=None):
 
     delta follows the mass-fraction mixing rule (Eq. 21), computed from the
     elements of the material (G4Element symbol, not name) and the density of
-    each pure element (the NIST material G4_<symbol>).
+    each pure element: the NIST material G4_<symbol>, unless the symbol is
+    listed in ``reference_densities.txt`` (in data_dir or in the shipped
+    folder), which takes precedence. This is needed for Br, whose table was
+    computed for liquid bromine while G4_Br is a gas.
 
     If a material has no property table, one is created. If it has one without
     RINDEX, RINDEX is added to it. If it already has a RINDEX, it is replaced
@@ -209,6 +255,7 @@ def apply_xray_rindex(g4_materials, data_dir=None, energy_grid_keV=None):
     keV = g4_units.keV
     g_cm3 = g4_units.g / g4_units.cm3
     nist = g4.G4NistManager.Instance()
+    overrides = read_reference_densities(data_dir)
     tables = {}
     for mat in g4_materials:
         name = str(mat.GetName())
@@ -228,6 +275,9 @@ def apply_xray_rindex(g4_materials, data_dir=None, energy_grid_keV=None):
         fractions = [mat.GetElementFraction(i) for i in range(n)]
         rho_i = []
         for symbol in symbols:
+            if symbol in overrides:
+                rho_i.append(overrides[symbol])
+                continue
             pure = nist.FindOrBuildMaterial("G4_" + symbol)
             if pure is None:
                 fatal(

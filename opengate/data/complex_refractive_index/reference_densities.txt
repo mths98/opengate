@@ -1,0 +1,12 @@
+# Reference densities of the pure elements, used by the mass-fraction mixing
+# rule (Eq. 21) in place of the density of the Geant4 NIST material G4_<symbol>.
+#
+# Only the elements whose table was computed at a density different from the
+# one of G4_<symbol> are listed here. For every other element the table was
+# computed at the NIST density, which is the one of G4_<symbol>.
+#
+# Format: symbol  density [g/cm3]
+#
+# Br: Br.txt was computed for liquid bromine (3.1028 g/cm3), while G4_Br is
+# a gas (0.00707 g/cm3).
+Br  3.1028
