@@ -386,6 +386,8 @@ void init_GateInfo(py::module &);
 
 void init_GateUserLimitsPhysics(py::module &);
 
+void init_GateXRayRefractionPhysics(py::module &);
+
 void init_GateVActor(py::module &);
 
 void init_GateVChemistryActor(py::module &);
@@ -791,6 +793,7 @@ PYBIND11_MODULE(opengate_core, m) {
   init_GateCheckEmModel(m);
   init_GateInfo(m);
   init_GateUserLimitsPhysics(m);
+  init_GateXRayRefractionPhysics(m);
   init_GateVActor(m);
   init_GateVChemistryActor(m);
   init_GateChemistryController(m);
