@@ -85,3 +85,6 @@ a.txt
 
 
 .clangd
+
+# Keep the X-ray refractive index tables (the generic data/ rule above would hide them)
+!opengate/data/
