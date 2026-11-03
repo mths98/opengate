@@ -152,4 +152,47 @@ if __name__ == "__main__":
     utility.print_test(ok, "20 keV: no warning")
     is_ok &= ok
 
+    # --- volumes without g4_material are skipped; unknown voxel material is fatal
+    # (no real volume has g4_material None after construction: GATE stops
+    # earlier, so the engine method is exercised with stub objects)
+    import opengate_core as g4
+    from types import SimpleNamespace as NS
+    from opengate.engines import PhysicsEngine
+
+    g4.G4NistManager.Instance().FindOrBuildMaterial("G4_WATER")
+    water = [
+        m
+        for m in g4.G4Material.GetMaterialTable
+        if str(m.GetName()) == "G4_WATER"
+    ][0]
+    vols = {
+        "none": NS(name="none", g4_material=None),
+        "water": NS(name="water", g4_material=water),
+    }
+    pe = PhysicsEngine.__new__(PhysicsEngine)
+    pe.g4_xray_rindex_tables = {}
+    sim_stub = NS(
+        volume_manager=NS(volumes=vols),
+        source_manager=NS(sources={}),
+    )
+    pe.simulation_engine = NS(simulation=sim_stub)
+    pe.physics_manager = NS(
+        user_info=NS(xray_phase_contrast=True, xray_refractive_index_data_dir=None)
+    )
+    pe.initialize_xray_refractive_index()
+    ok = sorted(pe.g4_xray_rindex_tables) == ["G4_WATER"]
+    utility.print_test(ok, "volume with g4_material None is skipped")
+    is_ok &= ok
+
+    vols["vox"] = NS(
+        name="vox", g4_material=None, voxel_materials=[[0, 1, "NoSuchMaterial"]]
+    )
+    try:
+        pe.initialize_xray_refractive_index()
+        ok = False
+    except Exception as e:
+        ok = "NoSuchMaterial" in str(e) and "vox" in str(e)
+    utility.print_test(ok, "unknown voxel material is fatal, citing name and volume")
+    is_ok &= ok
+
     utility.test_ok(is_ok)

@@ -599,16 +599,26 @@ class PhysicsEngine(EngineBase):
         names = []
         for vol in simulation.volume_manager.volumes.values():
             if hasattr(vol, "voxel_materials"):
-                names.extend(str(m[2]) for m in vol.voxel_materials)
-            names.append(str(vol.g4_material.GetName()))
+                for m in vol.voxel_materials:
+                    names.append((str(m[2]), vol.name))
+            # volumes without material of their own are skipped
+            if getattr(vol, "g4_material", None) is not None:
+                names.append((str(vol.g4_material.GetName()), vol.name))
         # each material is processed once, whatever the number of volumes
-        names = list(dict.fromkeys(names))
+        first_volume = {}
+        for name, vol_name in names:
+            first_volume.setdefault(name, vol_name)
+        by_name = {
+            str(mat.GetName()): mat for mat in g4.G4Material.GetMaterialTable
+        }
         materials = []
-        for name in names:
-            for mat in g4.G4Material.GetMaterialTable:
-                if str(mat.GetName()) == name:
-                    materials.append(mat)
-                    break
+        for name, vol_name in first_volume.items():
+            if name not in by_name:
+                fatal(
+                    f"X-ray refractive index: material '{name}' used in "
+                    f"volume '{vol_name}' not found in the Geant4 material table."
+                )
+            materials.append(by_name[name])
         self.g4_xray_rindex_tables = apply_xray_rindex(
             materials, data_dir=ui.xray_refractive_index_data_dir
         )
