@@ -749,6 +749,25 @@ class PhysicsManager(GateObject):
                 "is_input_file": True,
             },
         ),
+        "xray_phase_contrast": (
+            False,
+            {
+                "doc": "If True, the X-ray refractive index n = 1 - delta is "
+                "stored as RINDEX in the material properties table of the "
+                "materials used by the volumes. This is the single switch for "
+                "X-ray phase contrast: the refraction process (spec 02) will "
+                "use the same switch. Tables are tabulated between 1 and 150 keV.",
+            },
+        ),
+        "xray_refractive_index_data_dir": (
+            None,
+            {
+                "doc": "Folder containing the tables of the refractive index "
+                "of the elements (one file per element symbol, e.g. O.txt). "
+                "If None (default), the folder shipped with GATE is used. "
+                "Only used if xray_phase_contrast is True.",
+            },
+        ),
         "surface_properties_file": (
             None,
             {

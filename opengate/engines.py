@@ -19,6 +19,7 @@ from .physics import (
 )
 from .base import GateSingletonFatal
 from .logger import logger
+from .xray_refractive_index import apply_xray_rindex
 from .utility import g4_units
 
 
@@ -306,6 +307,7 @@ class PhysicsEngine(EngineBase):
         self.g4_parallel_world_physics = []
         self.g4_dna_physics_activator = None
         self.g4_optical_material_tables = {}
+        self.g4_xray_rindex_tables = {}
         self.g4_physical_volumes = []
         self.g4_surface_properties = None
         # Translated names of the particles requested for the user limits;
@@ -339,6 +341,7 @@ class PhysicsEngine(EngineBase):
         self.g4_parallel_world_physics = []
         self.g4_dna_physics_activator = None
         self.g4_optical_material_tables = {}
+        self.g4_xray_rindex_tables = {}
         self.g4_physical_volumes = []
         self.g4_surface_properties = None
         self.g4_user_limits_particles = []
@@ -405,6 +408,7 @@ class PhysicsEngine(EngineBase):
         self.initialize_global_cuts()
         self.initialize_regions()
         self.initialize_optical_material_properties()
+        self.initialize_xray_refractive_index()
         self.initialize_optical_surfaces()
         self.initialize_ionisation_options()
         self.initialize_users_ionisation_potentials()
@@ -583,6 +587,44 @@ class PhysicsEngine(EngineBase):
                         f"Could not load the optical material properties for material {material_name} "
                         f"found in volume {vol.name} from file {self.physics_manager.get_optical_properties_file()}."
                     )
+
+    def initialize_xray_refractive_index(self):
+        """Store the X-ray refractive index (RINDEX = 1 - delta) in the
+        material properties table of every material used by the volumes.
+        Does nothing unless the user option xray_phase_contrast is True."""
+        ui = self.physics_manager.user_info
+        if not ui.xray_phase_contrast:
+            return
+        simulation = self.simulation_engine.simulation
+        names = []
+        for vol in simulation.volume_manager.volumes.values():
+            if hasattr(vol, "voxel_materials"):
+                names.extend(str(m[2]) for m in vol.voxel_materials)
+            names.append(str(vol.g4_material.GetName()))
+        # each material is processed once, whatever the number of volumes
+        names = list(dict.fromkeys(names))
+        materials = []
+        for name in names:
+            for mat in g4.G4Material.GetMaterialTable:
+                if str(mat.GetName()) == name:
+                    materials.append(mat)
+                    break
+        self.g4_xray_rindex_tables = apply_xray_rindex(
+            materials, data_dir=ui.xray_refractive_index_data_dir
+        )
+        # tables are tabulated up to 150 keV (mono-energetic sources only)
+        for source in simulation.source_manager.sources.values():
+            energy = getattr(source, "energy", None)
+            if (
+                energy is not None
+                and energy.type == "mono"
+                and energy.mono > 150 * g4_units.keV
+            ):
+                simulation.warn_user(
+                    f"Source '{source.name}' has an energy above 150 keV: the "
+                    "X-ray refractive index is tabulated up to 150 keV and the "
+                    "value at 150 keV is used beyond."
+                )
 
     @requires_fatal("physics_manager")
     def initialize_optical_surfaces(self):
