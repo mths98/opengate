@@ -83,15 +83,35 @@ if __name__ == "__main__":
     )
     utility.print_test(ok_mpt, "existing MPT: RINDEX added, ABSLENGTH kept")
 
-    # --- existing RINDEX: fatal error citing the material name
+    # --- foreign RINDEX (e.g. optical) on a fresh material: fatal
     ok_fatal = False
+    fe = nist.FindOrBuildMaterial("G4_Fe")
+    foreign = g4.G4MaterialPropertiesTable()
+    foreign.AddProperty("RINDEX", [1 * keV, 150 * keV], [1.5, 1.5], False, False)
+    fe.SetMaterialPropertiesTable(foreign)
     try:
-        apply_xray_rindex([water])
+        apply_xray_rindex([fe])
     except Exception as e:
-        ok_fatal = "G4_WATER" in str(e)
-        utility.print_test(ok_fatal, f"existing RINDEX -> {e}")
+        ok_fatal = "G4_Fe" in str(e)
+        utility.print_test(ok_fatal, f"foreign RINDEX -> {e}")
     if not ok_fatal:
-        utility.print_test(False, "existing RINDEX did not raise")
+        utility.print_test(False, "foreign RINDEX did not raise")
+
+    # --- re-applying our own RINDEX replaces it (successive simulations)
+    ok_again = False
+    try:
+        grid2 = np.geomspace(1.0, 150.0, 100)
+        apply_xray_rindex([water], energy_grid_keV=grid2)
+        v2 = water.GetMaterialPropertiesTable().GetPropertyValues("RINDEX")
+        ref2 = expected_rindex(water, grid2)
+        ok_again = (
+            len(v2[0]) == 100
+            and np.max(np.abs(np.array(v2[1]) - ref2)) <= 1e-12
+            and np.max(np.abs(np.array(v2[0]) - grid2 * keV)) <= 1e-9
+        )
+    except Exception as e:
+        utility.print_test(False, f"re-apply raised: {e}")
+    utility.print_test(ok_again, "re-apply on same material: replaced, 100 nodes")
 
     # --- one entry per material
     al = nist.FindOrBuildMaterial("G4_Al")
@@ -99,4 +119,4 @@ if __name__ == "__main__":
     ok_dict = sorted(out.keys()) == ["G4_Al", "G4_Cu"]
     utility.print_test(ok_dict, f"returned keys: {sorted(out.keys())}")
 
-    utility.test_ok(is_ok and ok_db and ok_mpt and ok_fatal and ok_dict)
+    utility.test_ok(is_ok and ok_db and ok_mpt and ok_fatal and ok_again and ok_dict)

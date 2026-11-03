@@ -153,6 +153,13 @@ def compound_delta(
     return density_g_cm3 * result
 
 
+# property tables created or modified by apply_xray_rindex, by material name.
+# G4Materials are process-wide singletons, so a RINDEX written by a previous
+# simulation in the same process is ours and may be replaced. This registry
+# also keeps the tables alive.
+_xray_rindex_tables = {}
+
+
 def apply_xray_rindex(g4_materials, data_dir=None, energy_grid_keV=None):
     """Store RINDEX = 1 - delta in the property table of each G4Material.
 
@@ -161,7 +168,9 @@ def apply_xray_rindex(g4_materials, data_dir=None, energy_grid_keV=None):
     each pure element (the NIST material G4_<symbol>).
 
     If a material has no property table, one is created. If it has one without
-    RINDEX, RINDEX is added to it. If it already has RINDEX, this is fatal.
+    RINDEX, RINDEX is added to it. If it already has RINDEX written by a
+    previous call (module registry), it is replaced; any other existing RINDEX
+    (e.g. optical) is fatal.
     Returns a dict {material name: property table}; the caller must keep it so
     that the tables stay alive.
     """
@@ -176,7 +185,10 @@ def apply_xray_rindex(g4_materials, data_dir=None, energy_grid_keV=None):
         mpt = mat.GetMaterialPropertiesTable()
         if mpt is None:
             mpt = g4.G4MaterialPropertiesTable()
-        elif mpt.GetPropertyValues("RINDEX") is not None:
+        elif (
+            mpt.GetPropertyValues("RINDEX") is not None
+            and _xray_rindex_tables.get(name) is None
+        ):
             fatal(
                 f"X-ray refractive index: material '{name}' already has a "
                 "RINDEX property in its material properties table."
@@ -200,4 +212,5 @@ def apply_xray_rindex(g4_materials, data_dir=None, energy_grid_keV=None):
         mpt.AddProperty("RINDEX", list(grid * keV), list(1.0 - delta), False, False)
         mat.SetMaterialPropertiesTable(mpt)
         tables[name] = mpt
+        _xray_rindex_tables[name] = mpt
     return tables
