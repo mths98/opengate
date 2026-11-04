@@ -68,9 +68,9 @@ class WavefrontActor(ActorBase, g4.GateWavefrontActor):
 
     Each photon accumulates the phase Phi = sum of -2 pi delta L / lambda
     along its steps (delta = 1 - RINDEX(E) of the material, lambda = h c / E).
-    At its first crossing of the plane, the pixel hit by the photon receives
-    sqrt(E/keV) cos(Phi), sqrt(E/keV) sin(Phi) and E/keV. Only gammas are
-    considered. The grids are accumulated over the runs.
+    At its first crossing of the plane in the +z direction, the pixel hit by
+    the photon receives sqrt(E/keV) cos(Phi), sqrt(E/keV) sin(Phi) and E/keV.
+    Only gammas are considered. The grids are accumulated over the runs.
 
     Notes:
 
@@ -79,6 +79,11 @@ class WavefrontActor(ActorBase, g4.GateWavefrontActor):
       containing the whole path of the photons;
     - the phase is not accumulated after the first crossing: the geometry
       after the plane should only contain vacuum or air (not enforced);
+    - only the crossings in the +z direction are counted: the beam must go
+      in +z and the source must be before the plane (as in GAMOS); the
+      crossings in the -z direction of photons not yet counted (secondaries
+      born after the plane) are recorded in n_backward_crossings and not
+      summed;
     - a photon created on the plane (within the geometrical tolerance) is
       not counted;
     - kill_after_plane also kills the photons crossing outside the grid;
@@ -224,6 +229,7 @@ class WavefrontActor(ActorBase, g4.GateWavefrontActor):
             "n_photons_counted": n,
             "n_outside_grid": c["n_outside_grid"],
             "n_recrossings": c["n_recrossings"],
+            "n_backward_crossings": c["n_backward_crossings"],
             "effective_energy_keV": c["sum_energy_keV"] / n if n > 0 else None,
             "plane_z_mm": self.plane_z / mm,
             "plane_center_mm": [self.plane_center[0] / mm, self.plane_center[1] / mm],

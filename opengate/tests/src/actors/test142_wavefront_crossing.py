@@ -3,14 +3,18 @@
 
 """First crossing, kill_after_plane, MT and robustness of the WavefrontActor.
 
-Simulation A (option4, 4 threads, two runs, sources by activity):
-  (d)       lead behind the plane: every gamma track counts once, so N is the
-            number of distinct (RunID, EventID, TrackID) entering a thin volume at the
-            plane (PhaseSpaceActor), and n_recrossings > 0; without lead (control)
-            n_recrossings = 0 and N = emitted
+Simulation A (option4, 4 threads, two runs, number of primaries per run):
+  (d)       lead behind the plane: only the crossings in the +z direction are
+            counted, once per track, so N is the number of distinct
+            (RunID, EventID, TrackID) entering a thin volume at the plane
+            going in +z (PhaseSpaceActor, PreDirection_Z > 0). The secondaries
+            born in the lead (annihilation, bremsstrahlung at 3 MeV) that come
+            back give n_backward_crossings > 0 and n_recrossings > 0; without
+            lead (control) both are 0 and N = emitted
   focus 1   the phase is accumulated step by step with the energy of the step:
-            a thin Al scatterer (Compton changes the energy) followed by a PMMA
-            plate, the photons that interact in the plate are killed
+            a thin Al scatterer (Compton changes the energy) followed by a
+            PMMA plate (a 1 mm PMMA plate before the Al and another one
+            after it), the photons that interact in the plates are killed
   focus 2   the two runs accumulate in the same grids
 Simulation B (vacuum, no interactions, point source so that the pixels are
 reproducible), run with 1 thread and with 4 threads + kill_after_plane:
@@ -159,15 +163,19 @@ def phase_of(table, energy_keV, thickness_mm):
 
 
 def distinct_gamma_tracks(path):
-    """Number of distinct (RunID, EventID, TrackID) of the gammas."""
+    """Number of distinct (RunID, EventID, TrackID) of the gammas entering
+    the volume going in +z, and the same for the entries going in -z."""
     with uproot.open(path) as f:
         tree = f[f.keys()[0]]
-        names = ["RunID", "EventID", "TrackID", "ParticleName"]
+        names = ["RunID", "EventID", "TrackID", "ParticleName", "PreDirection_Z"]
         data = tree.arrays(names, library="np")
     gamma = data["ParticleName"] == "gamma"
-    keys = (data[k][gamma].tolist() for k in ("RunID", "EventID", "TrackID"))
-    pairs = set(zip(*keys))
-    return len(pairs), int(gamma.sum())
+    out = []
+    for forward in (data["PreDirection_Z"] > 0, data["PreDirection_Z"] < 0):
+        sel = gamma & forward
+        keys = (data[k][sel].tolist() for k in ("RunID", "EventID", "TrackID"))
+        out.append((len(set(zip(*keys))), int(sel.sum())))
+    return out
 
 
 # ---------------------------------------------------------------- simulation A
@@ -191,14 +199,17 @@ def make_sim_a(paths):
     sim.user_hook_after_run = after_run
 
     # lead beam: a thin vacuum box around the plane, the lead right behind it
-    add_source(sim, "src_pb", -120 * mm, n=[5000, 5000])
+    # 3 MeV: pair production, bremsstrahlung and annihilation in the lead
+    # create secondary gammas after the plane, some of them come back (the
+    # refractive index table ends at 150 keV, only a warning is issued)
+    add_source(sim, "src_pb", -120 * mm, n=[5000, 5000], energy=3000 * keV)
     z_pb = PLANE_Z + 0.05 * mm + 2.5 * mm
     add_box(sim, "pb", -120 * mm, z_pb, 20 * mm, 5 * mm, "G4_Pb")
     add_wavefront(sim, "wf_pb", -120 * mm, grid=[200, 200])
     box = add_box(sim, "box_pb", -120 * mm, PLANE_Z, 20 * mm, 0.1 * mm, "G4_Galactic")
     phsp = sim.add_actor("PhaseSpaceActor", "phsp_pb")
     phsp.attached_to = box.name
-    phsp.attributes = ["RunID", "EventID", "TrackID", "ParticleName"]
+    phsp.attributes = ["RunID", "EventID", "TrackID", "ParticleName", "PreDirection"]
     phsp.steps_to_store = "entering"
     phsp.output_filename = "phsp_pb.root"
 
@@ -316,23 +327,31 @@ def case_a(paths):
     log = sim.user_hook_log
     emitted = {"src_pb": 10000, "src_ctrl": 3000, "src_vac": 4000}
 
-    # (d) lead: every gamma track counts once
+    # (d) lead: only the +z crossings count, once per track
     wf = get("wf_pb")
     c = wf.counters
-    tracks, hits = distinct_gamma_tracks(sim.output_dir / "phsp_pb.root")
+    (tracks, hits), (back_tracks, back_hits) = distinct_gamma_tracks(
+        sim.output_dir / "phsp_pb.root"
+    )
     ok = c["n_recrossings"] > 0 and c["n_photons_counted"] == tracks
+    ok &= c["n_backward_crossings"] > 0 and back_hits > 0
     ok &= c["n_photons_counted"] >= emitted["src_pb"]
     ok_d = check(
         ok,
         f"(d) lead: N = {c['n_photons_counted']}, distinct gamma tracks entering "
-        f"the plane volume = {tracks} ({hits} entries), emitted = "
-        f"{emitted['src_pb']}, n_recrossings = {c['n_recrossings']}",
+        f"the plane volume going +z = {tracks} ({hits} entries), going -z = "
+        f"{back_tracks} tracks ({back_hits} entries), emitted = "
+        f"{emitted['src_pb']}, n_recrossings = {c['n_recrossings']}, "
+        f"n_backward_crossings = {c['n_backward_crossings']}",
     )
     c = get("wf_ctrl").counters
     ok_c = check(
-        c["n_recrossings"] == 0 and c["n_photons_counted"] == emitted["src_ctrl"],
+        c["n_recrossings"] == 0
+        and c["n_backward_crossings"] == 0
+        and c["n_photons_counted"] == emitted["src_ctrl"],
         f"(d) control without lead: N = {c['n_photons_counted']}, emitted = "
-        f"{emitted['src_ctrl']}, n_recrossings = {c['n_recrossings']}",
+        f"{emitted['src_ctrl']}, n_recrossings = {c['n_recrossings']}, "
+        f"n_backward_crossings = {c['n_backward_crossings']}",
     )
 
     # focus 2: two runs

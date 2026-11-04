@@ -56,6 +56,7 @@ void GateWavefrontActor::InitializeCpp() {
   fNumberOfCounted = 0;
   fNumberOutsideGrid = 0;
   fNumberOfRecrossings = 0;
+  fNumberOfBackward = 0;
   fSumEnergy = 0;
 }
 
@@ -109,6 +110,7 @@ void GateWavefrontActor::SteppingAction(G4Step *step) {
   const G4double d1 = p1.z() - fPlaneZ;
   const G4bool crosses = std::abs(d1) < fPlaneTolerance ||
                          (d0 * d1 < 0 && std::abs(d0) >= fPlaneTolerance);
+  const G4bool forward = crosses && p1.z() > p0.z();
 
   // 2. photon already counted: the phase is no longer needed, only the
   // recrossings are recorded (diagnostic)
@@ -120,13 +122,20 @@ void GateWavefrontActor::SteppingAction(G4Step *step) {
     return;
   }
 
+  // a crossing in the -z direction of a photon not yet counted (typically a
+  // secondary born after the plane): it is not counted, only recorded
+  if (crosses && !forward) {
+    G4AutoLock mutex(&WavefrontGridMutex);
+    fNumberOfBackward++;
+  }
+
   // 3. delta and wavelength at the pre-step energy and material
   const G4double energy = pre->GetTotalEnergy();
   const G4double delta = 1.0 - GetRefractiveIndex(pre->GetMaterial(), energy);
   const G4double lambda = CLHEP::h_Planck * CLHEP::c_light / energy;
   const G4double length = step->GetStepLength();
 
-  if (!crosses) {
+  if (!forward) {
     // whole step
     data.fPhase += -CLHEP::twopi * delta * length / lambda;
     return;
@@ -177,6 +186,7 @@ py::dict GateWavefrontActor::GetCounters() const {
   d["n_photons_counted"] = fNumberOfCounted;
   d["n_outside_grid"] = fNumberOutsideGrid;
   d["n_recrossings"] = fNumberOfRecrossings;
+  d["n_backward_crossings"] = fNumberOfBackward;
   d["sum_energy_keV"] = fSumEnergy;
   return d;
 }

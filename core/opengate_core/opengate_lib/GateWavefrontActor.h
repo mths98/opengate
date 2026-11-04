@@ -21,8 +21,10 @@ class G4Material;
  *
  * Each photon accumulates the phase Phi = sum of -2 pi delta L / lambda
  * along its steps, with delta = 1 - RINDEX(E) of the pre-step material and
- * lambda = h c / E. At its first crossing of the plane, sqrt(E/keV) cos(Phi),
- * sqrt(E/keV) sin(Phi) and E/keV are added to the pixel hit by the photon.
+ * lambda = h c / E. At its first crossing of the plane in the +z direction,
+ * sqrt(E/keV) cos(Phi), sqrt(E/keV) sin(Phi) and E/keV are added to the
+ * pixel hit by the photon. Crossings in the -z direction of photons not yet
+ * counted (secondaries born after the plane) are only counted, not summed.
  *
  * The three grids (ny x nx, row = y) are shared by all threads and the sums
  * are done under a mutex. The per-photon state (phase, already counted) is
@@ -47,8 +49,9 @@ public:
   // Main function called every step in attached volume
   void SteppingAction(G4Step *) override;
 
-  // Counters: number of photons counted, outside the grid, recrossings and
-  // sum of the energies of the counted photons (keV)
+  // Counters: number of photons counted, outside the grid, recrossings,
+  // backward (-z) crossings of photons not yet counted and sum of the
+  // energies of the counted photons (keV)
   py::dict GetCounters() const;
 
   int GetSizeX() const { return fSizeX; }
@@ -77,6 +80,7 @@ protected:
   long fNumberOfCounted = 0;
   long fNumberOutsideGrid = 0;
   long fNumberOfRecrossings = 0;
+  long fNumberOfBackward = 0;
   G4double fSumEnergy = 0; // keV
 
   struct threadLocalWavefront {

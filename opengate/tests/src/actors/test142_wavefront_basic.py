@@ -59,6 +59,7 @@ JSON_KEYS = {
     "n_photons_counted",
     "n_outside_grid",
     "n_recrossings",
+    "n_backward_crossings",
     "effective_energy_keV",
     "plane_z_mm",
     "size",
