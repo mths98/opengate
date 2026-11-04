@@ -135,7 +135,7 @@ G4VParticleChange *GateXRayRefractionProcess::PostStepDoIt(const G4Track &track,
     return G4VDiscreteProcess::PostStepDoIt(track, step);
   }
 
-  // 6. orientation: the normal points against the incident direction. It is
+  // 5. orientation: the normal points against the incident direction. It is
   // applied to the geometrical normal, before the roughness, so that a tilt
   // beyond the incident direction can be detected (c1 <= 0) and resampled.
   const G4ThreeVector p = track.GetMomentumDirection();
@@ -144,7 +144,7 @@ G4VParticleChange *GateXRayRefractionProcess::PostStepDoIt(const G4Track &track,
     normal = -normal;
   }
 
-  // 5. surface roughness, applied once; resampled until c1 > 0
+  // 6. surface roughness, applied once; resampled until c1 > 0
   if (fRoughnessSigma > 0) {
     for (int i = 0; i < kMaxRoughnessTrials; i++) {
       const G4ThreeVector tilted = TiltNormal(normal);
