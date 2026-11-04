@@ -98,16 +98,10 @@ void GateWavefrontActor::SteppingAction(G4Step *step) {
     return;
   }
   auto &data = fThreadLocalData.Get();
-
-  // 1. delta and wavelength at the pre-step energy and material
   const auto *pre = step->GetPreStepPoint();
   const auto *post = step->GetPostStepPoint();
-  const G4double energy = pre->GetTotalEnergy();
-  const G4double delta = 1.0 - GetRefractiveIndex(pre->GetMaterial(), energy);
-  const G4double lambda = CLHEP::h_Planck * CLHEP::c_light / energy;
-  const G4double length = step->GetStepLength();
 
-  // 2. does the step cross the plane? A step starting on the plane does not
+  // 1. does the step cross the plane? A step starting on the plane does not
   // (the previous step, ending on it, did)
   const G4ThreeVector &p0 = pre->GetPosition();
   const G4ThreeVector &p1 = post->GetPosition();
@@ -116,13 +110,25 @@ void GateWavefrontActor::SteppingAction(G4Step *step) {
   const G4bool crosses = std::abs(d1) < fPlaneTolerance ||
                          (d0 * d1 < 0 && std::abs(d0) >= fPlaneTolerance);
 
-  if (!crosses || data.fCounted) {
-    // 3. whole step
-    data.fPhase += -CLHEP::twopi * delta * length / lambda;
+  // 2. photon already counted: the phase is no longer needed, only the
+  // recrossings are recorded (diagnostic)
+  if (data.fCounted) {
     if (crosses) {
       G4AutoLock mutex(&WavefrontGridMutex);
       fNumberOfRecrossings++;
     }
+    return;
+  }
+
+  // 3. delta and wavelength at the pre-step energy and material
+  const G4double energy = pre->GetTotalEnergy();
+  const G4double delta = 1.0 - GetRefractiveIndex(pre->GetMaterial(), energy);
+  const G4double lambda = CLHEP::h_Planck * CLHEP::c_light / energy;
+  const G4double length = step->GetStepLength();
+
+  if (!crosses) {
+    // whole step
+    data.fPhase += -CLHEP::twopi * delta * length / lambda;
     return;
   }
 

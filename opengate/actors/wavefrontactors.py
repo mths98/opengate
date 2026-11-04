@@ -72,8 +72,18 @@ class WavefrontActor(ActorBase, g4.GateWavefrontActor):
     sqrt(E/keV) cos(Phi), sqrt(E/keV) sin(Phi) and E/keV. Only gammas are
     considered. The grids are accumulated over the runs.
 
-    The phase is not accumulated after the first crossing: the geometry after
-    the plane should only contain vacuum or air (not enforced).
+    Notes:
+
+    - the phase is only accumulated in the volumes where the actor is
+      registered: attach it to the world (the default), or to a mother volume
+      containing the whole path of the photons;
+    - the phase is not accumulated after the first crossing: the geometry
+      after the plane should only contain vacuum or air (not enforced);
+    - a photon created on the plane (within the geometrical tolerance) is
+      not counted;
+    - kill_after_plane also kills the photons crossing outside the grid;
+    - in the JSON file, effective_energy_keV is null when no photon is
+      counted (N = 0).
 
     Requires physics_manager.xray_phase_contrast = True, which fills the
     RINDEX of the materials.
@@ -216,6 +226,9 @@ class WavefrontActor(ActorBase, g4.GateWavefrontActor):
             "n_recrossings": c["n_recrossings"],
             "effective_energy_keV": c["sum_energy_keV"] / n if n > 0 else None,
             "plane_z_mm": self.plane_z / mm,
+            "plane_center_mm": [self.plane_center[0] / mm, self.plane_center[1] / mm],
+            "grid_corner_mm": [x0 / mm, y0 / mm],
+            "mhd_offset_convention": "center of first pixel",
             "size": [nx, ny],
             "spacing_mm": [dx / mm, dy / mm],
             "kill_after_plane": self.kill_after_plane,

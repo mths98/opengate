@@ -64,6 +64,9 @@ JSON_KEYS = {
     "size",
     "spacing_mm",
     "kill_after_plane",
+    "plane_center_mm",
+    "grid_corner_mm",
+    "mhd_offset_convention",
 }
 
 
@@ -320,6 +323,18 @@ def check_outputs(paths, wf):
     ok &= meta["n_photons_counted"] == wf.counters["n_photons_counted"]
     ok &= meta["size"] == GRID and meta["plane_z_mm"] == PLANE_Z / mm
     ok &= np.allclose(meta["spacing_mm"], [s / mm for s in SPACING])
+    # corner = centre - size * spacing / 2, MHD Offset = corner + spacing / 2
+    corner = [x0 / mm, y0 / mm]
+    ok &= np.allclose(meta["grid_corner_mm"], corner, rtol=0, atol=1e-12)
+    ok &= np.allclose(
+        meta["plane_center_mm"], [c / mm for c in wf.plane_center], rtol=0, atol=0
+    )
+    ok &= meta["mhd_offset_convention"] == "center of first pixel"
+    offset = [c + s / mm / 2 for c, s in zip(meta["grid_corner_mm"], SPACING)]
+    with open(files[0]) as f:
+        line = [x for x in f if x.startswith("Offset")][0]
+    values = [float(v) for v in line.split("=")[1].split()]
+    ok &= np.allclose(values, offset, rtol=0, atol=1e-12)
     utility.print_test(
         ok, f"outputs of {wf.name}: 3 MHD (2D, spacing, origin) + JSON keys"
     )

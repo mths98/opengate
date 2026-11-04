@@ -10,6 +10,9 @@
 
 #include "GateWavefrontActor.h"
 
+#include <stdexcept>
+#include <string>
+
 namespace {
 // numpy view (ny, nx) on a grid of the actor, without copy. The base of the
 // array is the python actor object: the actor (and thus the grid memory) is
@@ -19,6 +22,12 @@ py::array_t<double> GridView(py::object self, std::vector<double> &grid,
   const auto nx = static_cast<py::ssize_t>(actor.GetSizeX());
   const auto ny = static_cast<py::ssize_t>(actor.GetSizeY());
   const auto itemsize = static_cast<py::ssize_t>(sizeof(double));
+  if (grid.size() != static_cast<std::size_t>(nx * ny)) {
+    throw std::runtime_error(
+        "GateWavefrontActor: the grid has " + std::to_string(grid.size()) +
+        " values instead of nx * ny = " + std::to_string(nx * ny) +
+        ". Was the actor initialized?");
+  }
   return py::array_t<double>({ny, nx}, {nx * itemsize, itemsize}, grid.data(),
                              self);
 }
