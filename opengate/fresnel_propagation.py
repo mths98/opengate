@@ -126,6 +126,12 @@ def build_field(data, model):
     across the pixel (object edges). The former model sqrt(sum E) Psi / |Psi|
     kept only the phase of Psi and so discarded that loss of coherence; on a
     1 um grid it overestimated the edge fringes by 10-40 %.
+    The expected value of Psi / sqrt(N), relative to the flat field, is
+    <exp(-mu L + i Phi)> / sqrt(<exp(-mu L)>) (pixel averages); it equals the
+    pixel average of the transmission T, <exp(-mu L / 2 + i Phi)>, only up to
+    second order in the variation of mu L inside the pixel: negligible for weak
+    absorbers (mu L <= 0.05 in the P2 validation), not for strongly absorbing
+    objects whose edge falls inside a pixel.
 
     The deposited energy cannot be negative: values below -1e-12 max(E) raise a
     ValueError; smaller negative values are rounding errors and are set to 0.
