@@ -54,6 +54,7 @@ opengate_photon_attenuation_image = "opengate.bin.opengate_photon_attenuation_im
 opengate_jobs = "opengate.bin.opengate_jobs:go"
 opengate_job_runner = "opengate.bin.opengate_job_runner:go"
 opengate_dose_rate = "opengate.bin.dose_rate:go"
+opengate_fresnel_propagate = "opengate.bin.opengate_fresnel_propagate:go"
 
 dose_rate = "opengate.bin.dose_rate:go"
 split_spect_projections = "opengate.bin.split_spect_projections:go"
