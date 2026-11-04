@@ -71,6 +71,14 @@ def run(sim):
     return sim.user_hook_log
 
 
+def add_parallel_volume(sim):
+    sim.add_parallel_world("world2")
+    pbox = sim.add_volume("Box", "pbox")
+    pbox.mother = "world2"
+    pbox.material = "G4_WATER"
+    pbox.size = [1 * cm, 1 * cm, 1 * cm]
+
+
 def spectrum(max_energy):
     return {
         "type": "histogram",
@@ -145,6 +153,22 @@ if __name__ == "__main__":
     )
     if not ok:
         print(out[-2000:])
+    is_ok &= ok
+
+    # (g) parallel world with the contrast on: exactly one warning
+    sim = make_sim(paths, True)
+    add_parallel_volume(sim)
+    run(sim)
+    warns = [w for w in sim.warnings if "parallel world" in w]
+    ok = len(warns) == 1
+    utility.print_test(ok, f"(g) parallel world: {len(warns)} warning(s)")
+    is_ok &= ok
+
+    # (h) no parallel world: no such warning
+    sim = make_sim(paths, True)
+    run(sim)
+    ok = not [w for w in sim.warnings if "parallel world" in w]
+    utility.print_test(ok, "(h) no parallel world: no warning")
     is_ok &= ok
 
     utility.test_ok(is_ok)

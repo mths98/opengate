@@ -749,6 +749,18 @@ class PhysicsEngine(EngineBase):
                 "The option xray_surface_roughness_sigma must be >= 0, "
                 f"but is {ui.xray_surface_roughness_sigma}."
             )
+        # Every parallel world is registered as layered mass geometry, so the
+        # material changes at its boundaries but the navigator of the mass
+        # world, which gives the normal, does not see them.
+        volume_manager = self.physics_manager.simulation.volume_manager
+        parallel_worlds = volume_manager.parallel_world_names
+        if len(parallel_worlds) > 0:
+            self.physics_manager.warn_user(
+                "X-ray refraction (xray_phase_contrast) only uses the "
+                "boundaries of the mass world: volumes in a parallel world "
+                f"({parallel_worlds}) do not refract correctly (parallel "
+                "world boundaries are not supported)."
+            )
         # The physics constructor is implemented in C++, so that Geant4 can
         # call ConstructProcess on each worker thread without the GIL.
         # The physics list owns the object and deletes it with itself.
