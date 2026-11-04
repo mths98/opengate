@@ -8,4 +8,5 @@ from . import (
     dynamicactors,
     biasingactors,
     chemistrycounters,
+    wavefrontactors,
 )

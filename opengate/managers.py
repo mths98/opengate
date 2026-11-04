@@ -134,6 +134,7 @@ from .actors.miscactors import (
     SimulationStatisticsActor,
     DebugActor,
 )
+from .actors.wavefrontactors import WavefrontActor
 from .actors.pgactors import (
     VoxelizedPromptGammaAnalogActor,
     VoxelizedPromptGammaTLEActor,
@@ -194,6 +195,7 @@ actor_types = {
     "ARFActor": ARFActor,
     "ARFTrainingDatasetActor": ARFTrainingDatasetActor,
     "DebugActor": DebugActor,
+    "WavefrontActor": WavefrontActor,
     # digit
     "PhaseSpaceActor": PhaseSpaceActor,
     "DigitizerAdderActor": DigitizerAdderActor,
