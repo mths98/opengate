@@ -173,7 +173,9 @@ def distinct_gamma_tracks(path):
 # ---------------------------------------------------------------- simulation A
 # beams along x: lead (-120), vacuum (-60), scatterer (0), control (+120)
 AL_T = 10 * um
-PMMA_T = 3 * mm
+PRE_T = 1 * mm  # plate before the scatterer, normal incidence
+Z_PRE = -3 * mm
+PMMA_T = 1 * mm  # plate after the scatterer, seen at the polar angle
 Z_PMMA = 5.5 * mm
 F1_PLANE = 20 * mm
 F1_ENERGY = 60
@@ -212,13 +214,16 @@ def make_sim_a(paths):
 
     # focus 1: Al scatterer at z = 0, PMMA plate, vacuum, plane
     src = add_source(sim, "src_f1", 0, n=[200000, 200000], energy=F1_ENERGY * keV)
-    make_point(src, F1_BEAM, F1_BEAM, -1 * mm)
+    make_point(src, F1_BEAM, F1_BEAM, -6 * mm)
     add_box(sim, "al", 0, 0, 20 * mm, AL_T, "G4_Al")
-    pmma = add_box(sim, "pmma", 0, Z_PMMA, 80 * mm, PMMA_T, "G4_PLEXIGLASS")
-    kill = sim.add_actor("KillAccordingProcessesActor", "kill_pmma")
-    kill.attached_to = pmma.name
-    kill.processes_to_kill = ["all"]
-    kill.is_rayleigh_an_interaction = True
+    # photons that interact in a plate are killed, so that the phase of
+    # the photons that arrive is only the one of the steps without interaction
+    for tag, z, thick in (("pre", Z_PRE, PRE_T), ("post", Z_PMMA, PMMA_T)):
+        plate = add_box(sim, f"pmma_{tag}", 0, z, 80 * mm, thick, "G4_PLEXIGLASS")
+        kill = sim.add_actor("KillAccordingProcessesActor", f"kill_{tag}")
+        kill.attached_to = plate.name
+        kill.processes_to_kill = ["all"]
+        kill.is_rayleigh_an_interaction = True
     half = F1_PIXELS * F1_SPACING / 2
     wf = add_wavefront(
         sim,
@@ -232,59 +237,75 @@ def make_sim_a(paths):
     return sim
 
 
+def wrap(x):
+    return float(np.angle(np.exp(1j * x)))
+
+
 def check_phase_per_step(wf, comp):
-    """Single-photon pixels outside the beam pixel: the phase of the PMMA plate
-    seen at the polar angle and with the energy that the photon has at the plate."""
+    """Compton photons that are alone in their pixel. The expected phase is
+    P1(E0) + (a1 + a2) / 2 + P2(E'), with P1 the plate before the scatterer
+    (normal incidence, the photon still has E0), P2 the plate after it (path
+    T / cos(theta), energy E'), and a1 = phase of the scatterer at E0 and
+    a2 = phase of the scatterer after the scattering (E', 1 / cos(theta)); the
+    scattering point is somewhere inside the scatterer, so the phase of the
+    scatterer is between a1 and a2. Two wrong models must fail in every pixel:
+    (a) E0 at all the steps, (b) E' at all the steps."""
     pmma = rindex_table(comp["G4_PLEXIGLASS"])
     al = rindex_table(comp["G4_Al"])
     psi = wf.real + 1j * wf.imag
     energy = wf.energy
+    e0 = F1_ENERGY
     single = (energy > 0) & (np.abs(np.abs(psi) ** 2 - energy) < 1e-6 * energy)
-    single[5, 5] = False  # direct beam
-    jj, ii = np.nonzero(single)
-    if len(jj) == 0:
-        return check(False, "(focus 1) no single-photon pixel outside the beam")
+    single &= energy < e0 - 0.5  # Compton
     d = F1_SPACING / mm
-    x0 = F1_ORIGIN / mm
-    beam = F1_BEAM / mm
+    x0, beam, dz = F1_ORIGIN / mm, F1_BEAM / mm, F1_PLANE / mm
+    a1 = phase_of(al, e0, AL_T / mm)
 
-    def expected(e_keV, x, y):
-        dist = np.sqrt((x - beam) ** 2 + (y - beam) ** 2 + (F1_PLANE / mm) ** 2)
-        cos_t = (F1_PLANE / mm) / dist
-        return phase_of(pmma, e_keV, PMMA_T / mm / cos_t), cos_t
-
-    worst, tol_max, n_ok, diffs = 0.0, 0.0, 0, []
-    for j, i in zip(jj, ii):
-        e_prime = float(energy[j, i])
-        x, y = x0 + (i + 0.5) * d, x0 + (j + 0.5) * d
-        phi, cos_t = expected(e_prime, x, y)
-        # tolerance: phase accumulated in the scatterer (before and after the
-        # scattering, with the energy of the step) + position inside the pixel
-        tol_al = abs(phase_of(al, F1_ENERGY, AL_T / mm)) + abs(
-            phase_of(al, e_prime, AL_T / mm / cos_t)
+    def models(e, x, y):
+        cos_t = dz / np.sqrt((x - beam) ** 2 + (y - beam) ** 2 + dz**2)
+        a2 = phase_of(al, e, AL_T / mm / cos_t)
+        scat = (a1 + a2) / 2
+        right = phase_of(pmma, e0, PRE_T / mm) + scat + phase_of(
+            pmma, e, PMMA_T / mm / cos_t
         )
+        wrong_a = phase_of(pmma, e0, PRE_T / mm) + scat + phase_of(
+            pmma, e0, PMMA_T / mm / cos_t
+        )
+        wrong_b = phase_of(pmma, e, PRE_T / mm) + scat + phase_of(
+            pmma, e, PMMA_T / mm / cos_t
+        )
+        return right, wrong_a, wrong_b, abs(a1 - a2) / 2, cos_t
+
+    rows, n_single, n_low = [], 0, 0
+    for j, i in zip(*np.nonzero(single)):
+        e = float(energy[j, i])
+        n_single += 1
+        x, y = x0 + (i + 0.5) * d, x0 + (j + 0.5) * d
+        right, wrong_a, wrong_b, half_a, cos_t = models(e, x, y)
         corners = [
-            expected(e_prime, x + sx * d / 2, y + sy * d / 2)[0]
+            models(e, x + sx * d / 2, y + sy * d / 2)[0]
             for sx in (-1, 1)
             for sy in (-1, 1)
         ]
-        tol = tol_al + max(abs(c - phi) for c in corners) + 0.02
-        res = np.angle(psi[j, i] * np.exp(-1j * phi))
-        res0 = np.angle(psi[j, i] * np.exp(-1j * expected(F1_ENERGY, x, y)[0]))
-        worst = max(worst, abs(res) / tol)
-        tol_max = max(tol_max, tol)
-        n_ok += abs(res) <= tol
-        diffs.append((abs(res0) - tol, abs(res0), e_prime))
-    n = len(jj)
-    best = max(diffs)
-    ok = n >= 10 and n_ok == n and best[0] > 0
+        tol = half_a + max(abs(c - right) for c in corners) + 0.02
+        # selection from the expected values: both wrong models must be
+        # more than 2 tol away from the right one (modulo 2 pi)
+        if min(abs(wrap(wrong_a - right)), abs(wrap(wrong_b - right))) <= 2 * tol:
+            n_low += 1
+            continue
+        res = [abs(wrap(np.angle(psi[j, i]) - m)) for m in (right, wrong_a, wrong_b)]
+        rows.append((np.degrees(np.arccos(cos_t)), e, *res, tol))
+    print("   theta[deg]  E'[keV]  res_right  res_E0  res_E'    tol   [rad]")
+    for r in sorted(rows):
+        print("   " + "  ".join(f"{v:9.3f}" for v in r))
+    ok = len(rows) >= 10
+    ok &= all(r[2] <= r[5] and r[3] > r[5] and r[4] > r[5] for r in rows)
     return check(
         ok,
-        f"(focus 1) {n} single-photon pixels, {n_ok} within tolerance "
-        f"(worst |residual|/tol = {worst:.2f}, largest tol = {tol_max:.3f} rad, "
-        f"scatterer phase {abs(phase_of(al, F1_ENERGY, AL_T / mm)):.3f} rad); "
-        f"with E0 = {F1_ENERGY} keV instead of E' one pixel "
-        f"(E' = {best[2]:.3f} keV) is off by {best[1]:.3f} rad > tol",
+        f"(focus 1) {len(rows)} Compton pixels selected ({n_single} Compton "
+        f"single-photon pixels, {n_low} discarded because a wrong model would "
+        f"be within 2 tol); right model passes in all, E0-everywhere and "
+        f"E'-everywhere fail in all",
     )
 
 
@@ -389,7 +410,7 @@ def case_b(paths):
     (g1, c1), (g4, c4) = r1["wf_disc"], r4["wf_disc"]
     err = max(
         abs(float(a.sum()) - float(b.sum())) / max(abs(float(a.sum())), 1e-300)
-        for a, b in zip(g1[2:], g4[2:])
+        for a, b in zip(g1, g4)
     )
     err = max(err, abs(c1["sum_energy_keV"] - c4["sum_energy_keV"]) / 20.0 / N_DISC)
     # Source._scale_counts_for_thread is what splits the primaries between
