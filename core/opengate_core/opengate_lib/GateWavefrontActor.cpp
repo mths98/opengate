@@ -122,11 +122,19 @@ void GateWavefrontActor::SteppingAction(G4Step *step) {
     return;
   }
 
-  // a crossing in the -z direction of a photon not yet counted (typically a
-  // secondary born after the plane): it is not counted, only recorded
+  // the first crossing of the track decides it. In the -z direction (typically
+  // a secondary born after the plane) the photon is never summed: it is only
+  // recorded, and its later crossings, in any direction, are recrossings
   if (crosses && !forward) {
-    G4AutoLock mutex(&WavefrontGridMutex);
-    fNumberOfBackward++;
+    {
+      G4AutoLock mutex(&WavefrontGridMutex);
+      fNumberOfBackward++;
+    }
+    data.fCounted = true;
+    if (fKillAfterPlane) {
+      track->SetTrackStatus(fStopAndKill);
+    }
+    return;
   }
 
   // 3. delta and wavelength at the pre-step energy and material

@@ -68,8 +68,10 @@ class WavefrontActor(ActorBase, g4.GateWavefrontActor):
 
     Each photon accumulates the phase Phi = sum of -2 pi delta L / lambda
     along its steps (delta = 1 - RINDEX(E) of the material, lambda = h c / E).
-    At its first crossing of the plane in the +z direction, the pixel hit by
-    the photon receives sqrt(E/keV) cos(Phi), sqrt(E/keV) sin(Phi) and E/keV.
+    The first crossing of the plane decides the track: if it is in the +z
+    direction, the pixel hit by the photon receives sqrt(E/keV) cos(Phi),
+    sqrt(E/keV) sin(Phi) and E/keV; if it is in the -z direction, the photon
+    is recorded in n_backward_crossings and never summed.
     Only gammas are considered. The grids are accumulated over the runs.
 
     Notes:
@@ -79,14 +81,16 @@ class WavefrontActor(ActorBase, g4.GateWavefrontActor):
       containing the whole path of the photons;
     - the phase is not accumulated after the first crossing: the geometry
       after the plane should only contain vacuum or air (not enforced);
-    - only the crossings in the +z direction are counted: the beam must go
-      in +z and the source must be before the plane (as in GAMOS); the
-      crossings in the -z direction of photons not yet counted (secondaries
-      born after the plane) are recorded in n_backward_crossings and not
-      summed;
+    - the first crossing, in either direction, decides the track: the beam
+      must go in +z and the source must be before the plane (as in GAMOS);
+      a photon whose first crossing is in -z (secondaries born after the
+      plane) is recorded in n_backward_crossings and never summed, even if
+      it crosses the plane again in +z; its later crossings are
+      n_recrossings;
     - a photon created on the plane (within the geometrical tolerance) is
       not counted;
-    - kill_after_plane also kills the photons crossing outside the grid;
+    - kill_after_plane also kills the photons crossing outside the grid and
+      the photons whose first crossing is in -z (so n_recrossings stays 0);
     - in the JSON file, effective_energy_keV is null when no photon is
       counted (N = 0).
 
@@ -123,7 +127,7 @@ class WavefrontActor(ActorBase, g4.GateWavefrontActor):
         ),
         "kill_after_plane": (
             False,
-            {"doc": "Kill the photons after their first crossing of the plane."},
+            {"doc": "Kill the photons at their first crossing of the plane."},
         ),
     }
 

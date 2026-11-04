@@ -21,10 +21,12 @@ class G4Material;
  *
  * Each photon accumulates the phase Phi = sum of -2 pi delta L / lambda
  * along its steps, with delta = 1 - RINDEX(E) of the pre-step material and
- * lambda = h c / E. At its first crossing of the plane in the +z direction,
- * sqrt(E/keV) cos(Phi), sqrt(E/keV) sin(Phi) and E/keV are added to the
- * pixel hit by the photon. Crossings in the -z direction of photons not yet
- * counted (secondaries born after the plane) are only counted, not summed.
+ * lambda = h c / E. The first crossing of the plane decides the track: if it
+ * is in the +z direction, sqrt(E/keV) cos(Phi), sqrt(E/keV) sin(Phi) and
+ * E/keV are added to the pixel hit by the photon; if it is in the -z
+ * direction (secondaries born after the plane) the photon is only counted
+ * in n_backward_crossings and never summed. The later crossings of the
+ * track, in any direction, are recrossings.
  *
  * The three grids (ny x nx, row = y) are shared by all threads and the sums
  * are done under a mutex. The per-photon state (phase, already counted) is
