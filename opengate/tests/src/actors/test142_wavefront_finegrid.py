@@ -18,7 +18,8 @@ listed in get_ignored_tests of opengate_tests_helpers.py (the global runner
 discovers the tests by glob), so it is not part of the global run.
 
 The number of worker threads is read from the Geant4 run manager in a hook
-called after the run.
+called after the run: this confirms the size of the thread pool, not that each
+thread got events.
 """
 
 import resource
