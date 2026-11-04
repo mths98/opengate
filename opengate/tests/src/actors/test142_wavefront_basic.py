@@ -4,7 +4,7 @@
 """Basic tests of the WavefrontActor (complex sum on a virtual plane).
 
 The actor accumulates the phase Phi = sum of -2 pi delta L / lambda of each
-photon and, at the first crossing of the plane z = plane_z, adds
+photon and, at the first +z crossing of the plane z = plane_z, adds
 sqrt(E/keV) exp(i Phi) and E/keV to the pixel hit by the photon.
 
 The gamma interactions (GammaGeneralProc) are inactivated: every photon goes
