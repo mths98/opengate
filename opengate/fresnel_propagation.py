@@ -23,6 +23,15 @@ HC_KEV_MM = 12.398419843320026e-7
 
 MODELS = ("article", "physical")
 
+# keys of the JSON file of the WavefrontActor that the propagation needs
+REQUIRED_KEYS = (
+    "plane_z_mm",
+    "n_photons_counted",
+    "spacing_mm",
+    "grid_corner_mm",
+    "effective_energy_keV",
+)
+
 
 @dataclass
 class WavefrontData:
@@ -66,7 +75,12 @@ def read_wavefront(base_path):
             )
     with open(files["json"]) as f:
         meta = json.load(f)
-    e_eff = meta.get("effective_energy_keV")
+    missing = [k for k in REQUIRED_KEYS if k not in meta]
+    if missing:
+        raise ValueError(
+            f"'{files['json']}': missing required key(s) {', '.join(missing)}."
+        )
+    e_eff = meta["effective_energy_keV"]
     if e_eff is None:
         raise ValueError(
             f"'{files['json']}': effective_energy_keV is null (no photon was "
@@ -100,15 +114,26 @@ def build_field(data, model):
 
     "article": Psi = Re + i Im, as recorded.
     "physical": Psi_f = sqrt(sum E) Psi / |Psi|, with 0 where |Psi| = 0.
+
+    The deposited energy cannot be negative: values below -1e-12 max(E) raise a
+    ValueError; smaller negative values are rounding errors and are set to 0.
     """
     psi = data.real + 1j * data.imag
     if model == "article":
         return psi
     if model == "physical":
+        energy = data.energy
+        tol = 1e-12 * max(float(np.max(energy)), 0.0)
+        e_min = float(np.min(energy))
+        if e_min < -tol:
+            raise ValueError(
+                f"The energy grid has negative values (min = {e_min:.6g}, "
+                f"max = {float(np.max(energy)):.6g}); it is not a valid wavefront."
+            )
         mod = np.abs(psi)
         out = np.zeros_like(psi)
         np.divide(psi, mod, out=out, where=mod > 0)
-        out *= np.sqrt(np.clip(data.energy, 0.0, None))
+        out *= np.sqrt(np.clip(energy, 0.0, None))
         return out
     raise ValueError(f"Unknown model '{model}', expected one of {MODELS}.")
 
@@ -180,6 +205,17 @@ def downsample(image, factor):
     )
 
 
+def _json_default(obj):
+    """Convert numpy scalars and arrays to native Python types for json.dump."""
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, Path):
+        return str(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 def write_intensity(path, image, pixel_mm, origin_mm, meta):
     """Write <path>.mhd (2D double) and <path>.json (with meta).
 
@@ -200,4 +236,4 @@ def write_intensity(path, image, pixel_mm, origin_mm, meta):
         "meta": meta,
     }
     with open(f"{base}.json", "w") as f:
-        json.dump(info, f, indent=2)
+        json.dump(info, f, indent=2, default=_json_default)

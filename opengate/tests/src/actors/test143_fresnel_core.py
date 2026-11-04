@@ -25,9 +25,8 @@ def write_synthetic(base, ny=6, nx=4, spacing=(0.002, 0.001), energy=20.0, n=5):
     rng = np.random.default_rng(1)
     dy, dx = spacing
     corner = (-nx * dx / 2, -ny * dy / 2)  # (x0, y0) as in the JSON
-    grids = {
-        s: rng.normal(size=(ny, nx)) for s in ("real", "imag", "energy")
-    }
+    grids = {s: rng.normal(size=(ny, nx)) for s in ("real", "imag")}
+    grids["energy"] = rng.uniform(0.0, 2.0, size=(ny, nx))  # energy is >= 0
     for s, g in grids.items():
         img = itk.image_view_from_array(g)
         img.SetSpacing([dx, dy])
@@ -100,6 +99,22 @@ if __name__ == "__main__":
         msg is not None and "effective_energy_keV" in msg, f"(b) N = 0: {msg[-60:]!r}"
     )
 
+    for key in (
+        "plane_z_mm",
+        "n_photons_counted",
+        "spacing_mm",
+        "grid_corner_mm",
+        "effective_energy_keV",
+    ):
+        b = out / f"nokey_{key}"
+        _, m = write_synthetic(str(b))
+        del m[key]
+        with open(f"{b}.json", "w") as f:
+            json.dump(m, f)
+        msg = raises(fp.read_wavefront, b)
+        ok = msg is not None and key in msg and "missing" in msg
+        is_ok &= utility.print_test(ok, f"(b) JSON without {key}: {msg[-50:]!r}")
+
     # (c) build_field
     d = fp.read_wavefront(base)
     ok = np.array_equal(fp.build_field(d, "article"), d.real + 1j * d.imag)
@@ -118,6 +133,17 @@ if __name__ == "__main__":
     is_ok &= utility.print_test(ok, f"(c) physical: |Psi_f|^2 = {abs(f[0, 0])**2:.6f}")
     ok = f[1, 1] == 0 and np.all(np.isfinite(f))
     is_ok &= utility.print_test(ok, "(c) physical: Psi = 0 gives 0, no NaN/inf")
+    # negative energy: rounding (> -1e-12 max) is zeroed, otherwise an error
+    d.energy[2, 2] = -1e-14 * d.energy.max()
+    d.real[2, 2], d.imag[2, 2] = 1.0, 0.0
+    f = fp.build_field(d, "physical")
+    ok = f[2, 2] == 0 and np.all(np.isfinite(f))
+    is_ok &= utility.print_test(ok, "(c) physical: rounding negative energy -> 0")
+    d.energy[2, 2] = -1e-6 * d.energy.max()
+    msg = raises(fp.build_field, d, "physical")
+    ok = msg is not None and "negative" in msg
+    is_ok &= utility.print_test(ok, f"(c) physical: negative energy: {msg!r:.60}")
+    d.energy[2, 2] = 0.0
     msg = raises(fp.build_field, d, "foo")
     is_ok &= utility.print_test(msg is not None, f"(c) unknown model: {msg!r:.60}")
     # article model: |Psi|^2 = N^2 E, physical: N E (T6)
@@ -189,5 +215,11 @@ if __name__ == "__main__":
         js = json.load(f)
     ok &= js["meta"] == {"model": "article"}
     is_ok &= utility.print_test(ok, "(i) write_intensity round trip")
+    meta_np = {"M": np.float64(1.25), "n": np.int64(3), "v": np.arange(2)}
+    fp.write_intensity(wp, img, (0.002, 0.001), (0.5, -0.25), meta_np)
+    with open(f"{wp}.json") as f:
+        js = json.load(f)
+    ok = js["meta"] == {"M": 1.25, "n": 3, "v": [0, 1]}
+    is_ok &= utility.print_test(ok, "(i) write_intensity with numpy types in meta")
 
     utility.test_ok(is_ok)
