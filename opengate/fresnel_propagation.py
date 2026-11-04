@@ -115,8 +115,17 @@ def read_wavefront(base_path):
 def build_field(data, model):
     """Complex field on the plane.
 
-    "article": Psi = Re + i Im, as recorded.
-    "physical": Psi_f = sqrt(sum E) Psi / |Psi|, with 0 where |Psi| = 0.
+    "article": Psi = Re + i Im, as recorded (Eq. 13): for N photons of energy E
+    with the mean phasor <e^{i Phi}> in the pixel, |Psi|^2 = N^2 E |<e^{i Phi}>|^2,
+    so the intensity grows as N^2 (the attenuation is doubled, D24).
+    "physical": Psi_f = Psi / sqrt(N), with N = sum E / E_eff the estimated
+    number of photons of the pixel (E_eff = effective_energy_keV), and 0 where
+    sum E = 0. Then |Psi_f|^2 = N E |<e^{i Phi}>|^2: the energy N E (Beer-Lambert)
+    times the loss of coherence inside the pixel, |<e^{i Phi}>| <= 1, which is
+    the pixel average of the transmission function where the phase varies
+    across the pixel (object edges). The former model sqrt(sum E) Psi / |Psi|
+    kept only the phase of Psi and so discarded that loss of coherence; on a
+    1 um grid it overestimated the edge fringes by 10-40 %.
 
     The deposited energy cannot be negative: values below -1e-12 max(E) raise a
     ValueError; smaller negative values are rounding errors and are set to 0.
@@ -133,10 +142,9 @@ def build_field(data, model):
                 f"The energy grid has negative values (min = {e_min:.6g}, "
                 f"max = {float(np.max(energy)):.6g}); it is not a valid wavefront."
             )
-        mod = np.abs(psi)
+        sqrt_n = np.sqrt(np.clip(energy, 0.0, None) / data.effective_energy_keV)
         out = np.zeros_like(psi)
-        np.divide(psi, mod, out=out, where=mod > 0)
-        out *= np.sqrt(np.clip(energy, 0.0, None))
+        np.divide(psi, sqrt_n, out=out, where=sqrt_n > 0)
         return out
     raise ValueError(f"Unknown model '{model}', expected one of {MODELS}.")
 

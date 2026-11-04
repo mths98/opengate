@@ -97,12 +97,41 @@ if __name__ == "__main__":
     d.real[1, 1] = 0.0
     d.imag[1, 1] = 0.0
     d.energy[1, 1] = 0.0
+    # coherent pixel: N = 3 photons of E = 20 keV (E_eff) in phase: N E = 60
     f = fp.build_field(d, "physical")
     ok = np.isclose(abs(f[0, 0]) ** 2, 60.0, rtol=1e-12)
     ok &= np.isclose(np.angle(f[0, 0]), phi, rtol=1e-12)
     is_ok &= utility.print_test(ok, f"(c) physical: |Psi_f|^2 = {abs(f[0, 0])**2:.6f}")
     ok = f[1, 1] == 0 and np.all(np.isfinite(f))
-    is_ok &= utility.print_test(ok, "(c) physical: Psi = 0 gives 0, no NaN/inf")
+    is_ok &= utility.print_test(ok, "(c) physical: empty pixel gives 0, no NaN/inf")
+    # decoherence: two photons of energy E with phases 0 and pi in one pixel
+    # give |Psi_f|^2 = 0 (the former sqrt(sum E) Psi/|Psi| model gave 2E)
+    e = 20.0
+    psi2 = np.sqrt(e) * (np.exp(0j) + np.exp(1j * np.pi))
+    dd = fp.WavefrontData(
+        real=np.array([[psi2.real, 0.0]]),
+        imag=np.array([[psi2.imag, 0.0]]),
+        energy=np.array([[2 * e, 0.0]]),
+        spacing_mm=(1.0, 1.0),
+        grid_corner_mm=(0.0, 0.0),
+        plane_z_mm=0.0,
+        effective_energy_keV=e,
+        n_photons_counted=2,
+        meta={},
+    )
+    f2 = fp.build_field(dd, "physical")
+    i2 = fp.intensity(f2)
+    ok = abs(i2[0, 0]) < 1e-24 and i2[0, 1] == 0 and np.all(np.isfinite(f2))
+    is_ok &= utility.print_test(
+        ok, f"(c) physical: phases 0 and pi give {i2[0, 0]:.1e} (not 2E = {2 * e:g})"
+    )
+    # partial coherence: phases 0 and pi/2 give N E |<e^{i Phi}>|^2 = 2E / 2 = E
+    psi3 = np.sqrt(e) * (1 + 1j)
+    dd.real[0, 0], dd.imag[0, 0] = psi3.real, psi3.imag
+    i3 = fp.intensity(fp.build_field(dd, "physical"))[0, 0]
+    is_ok &= utility.print_test(
+        np.isclose(i3, e, rtol=1e-12), f"(c) physical: phases 0 and pi/2 give {i3:g}"
+    )
     # negative energy: rounding (> -1e-12 max) is zeroed, otherwise an error
     d.energy[2, 2] = -1e-14 * d.energy.max()
     d.real[2, 2], d.imag[2, 2] = 1.0, 0.0

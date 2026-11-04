@@ -140,8 +140,8 @@ def build_parser():
         "--model",
         choices=("article", "physical", "both"),
         default="both",
-        help="amplitude model: article (Re + i Im), physical (sqrt(sum E) "
-        "Psi/|Psi|) or both (default)",
+        help="amplitude model: article (Re + i Im), physical (Psi / sqrt(N), "
+        "N = sum E / E_eff) or both (default)",
     )
     p.add_argument(
         "--source-distance",
