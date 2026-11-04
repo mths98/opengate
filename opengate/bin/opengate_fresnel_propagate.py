@@ -292,7 +292,8 @@ def go():
             )
             print(
                 f"  D = {d:g} mm, {model}: M = {meta['M']:.6g}, z_eff = "
-                f"{meta['z_eff_mm']:.6g} mm, F10 = {meta['fresnel_number_10px']}, "
+                f"{meta['z_eff_mm']:.6g} mm, "
+                f"F10 (y, x) = {meta['fresnel_number_10px']}, "
                 f"{meta['sampling']['message']} time {time.time() - t0:.2f} s, "
                 f"memory ~{need / 1e9:.3g} GB -> {out}"
             )

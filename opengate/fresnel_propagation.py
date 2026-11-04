@@ -91,7 +91,9 @@ def read_wavefront(base_path):
         )
     grids = {}
     for s in ("real", "imag", "energy"):
-        grids[s] = np.array(itk.array_from_image(itk.imread(str(files[s]))), "f8")
+        grids[s] = np.asarray(itk.array_from_image(itk.imread(str(files[s]))))
+        if grids[s].dtype != np.float64:
+            grids[s] = grids[s].astype(np.float64)
         if grids[s].ndim != 2:
             raise ValueError(f"'{files[s]}' is not a 2D image.")
     shape = grids["real"].shape
@@ -322,8 +324,9 @@ def propagate_to_detector(
     in place (see propagate): pass a copy to keep it.
 
     Returns (image, detector_pixel_mm, detector_origin_mm, meta); meta holds
-    distance_mm, z_eff_mm, M, wavelength_mm, fresnel_number_10px (for the pixel of
-    the plane and z_eff) and the result of check_sampling (padding included).
+    distance_mm, z_eff_mm, M, wavelength_mm, fresnel_number_10px (a (y, x) pair, for
+    the pixel of each axis of the plane and z_eff) and the result of check_sampling
+    (padding included).
     """
     m, z_eff = cone_beam_scaling(source_distance_mm, distance_mm)
     psi = propagate(
@@ -339,8 +342,12 @@ def propagate_to_detector(
     ]
     ratios = [c["critical_pixel_mm"] / pixel_mm[i] for i, c in enumerate(checks)]
     sampling = checks[int(np.argmax(ratios))]
-    pix = max(pixel_mm)
-    f10 = fresnel_number(pix, wavelength_mm, z_eff) if z_eff > 0 else None
+    # Fresnel number of a 10-pixel structure, per axis (y, x)
+    f10 = (
+        tuple(fresnel_number(p, wavelength_mm, z_eff) for p in pixel_mm)
+        if z_eff > 0
+        else None
+    )
     meta = {
         "distance_mm": float(distance_mm),
         "source_distance_mm": source_distance_mm,

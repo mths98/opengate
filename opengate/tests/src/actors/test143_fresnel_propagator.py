@@ -256,6 +256,8 @@ if __name__ == "__main__":
         obj.copy(), (d, d), (xs[0], xs[0]), LAM, dist, source_distance_mm=r1
     )
     ok = meta["M"] == m and meta["z_eff_mm"] == z_eff
+    f10 = meta["fresnel_number_10px"]
+    ok &= len(f10) == 2 and f10[0] == f10[1] == fp.fresnel_number(d, LAM, z_eff)
     ok &= det_pix == (d * m, d * m) and det_org == (xs[0] * m, xs[0] * m)
     is_ok &= utility.print_test(ok, "T5 propagate_to_detector meta and pixel x M")
     i_mod = spline_on(i_mod, xs * m, xr, xr)
