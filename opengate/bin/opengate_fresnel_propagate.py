@@ -10,6 +10,7 @@ models, for a parallel or cone beam, and writes the intensity as
 """
 
 import argparse
+import json
 import os
 import time
 from pathlib import Path
@@ -37,7 +38,9 @@ def estimate_memory_bytes(shape, padding, pad_factor, keep_copy=True):
     complex field, one copy of it (propagate works in place with padding "none";
     without the copy the field is rebuilt from the grids for each distance), the
     padded work array (only with padding), the temporary buffer that scipy may
-    allocate (same size as the work array) and the output image.
+    allocate (same size as the work array), the crop of propagate with padding,
+    the temporaries of build_field / intensity (about one complex array) and the
+    output image.
     """
     n = int(shape[0]) * int(shape[1])
     work = n * (int(pad_factor) ** 2 if padding != "none" else 1)
@@ -48,6 +51,9 @@ def estimate_memory_bytes(shape, padding, pad_factor, keep_copy=True):
     if padding != "none":
         total += work * BYTES_COMPLEX  # padded array
     total += work * BYTES_COMPLEX  # temporary buffer of the FFT
+    if padding != "none":
+        total += n * BYTES_COMPLEX  # crop returned by propagate
+    total += n * BYTES_COMPLEX  # temporaries of build_field / intensity
     total += n * BYTES_REAL  # output image
     return total
 
@@ -75,6 +81,26 @@ def flat_field_mask(region, image_shape, pixel_mm, origin_mm):
     return mask
 
 
+def format_distance(d):
+    """Distance for the file names: fixed point with up to 6 decimals and no
+    trailing zeros (never scientific notation), e.g. 50 -> '50', 12.5 -> '12.5',
+    1e-5 -> '0.00001'."""
+    text = f"{d:.6f}".rstrip("0").rstrip(".")
+    return text if text not in ("", "-0") else "0"
+
+
+def read_grid_shape(base):
+    """(ny, nx) from the 'size' key of <base>.json, without reading any MHD."""
+    path = Path(f"{fp._base(base)}.json")
+    if not path.is_file():
+        raise SystemExit(f"Incomplete wavefront: file '{path}' (json) not found.")
+    with open(path) as f:
+        size = json.load(f).get("size")
+    if not size or len(size) != 2:
+        raise SystemExit(f"'{path}': missing or invalid key 'size'.")
+    return int(size[1]), int(size[0])
+
+
 def parse_flat_field(values):
     if values is None:
         return None
@@ -95,7 +121,8 @@ def build_parser():
         prog="opengate_fresnel_propagate",
         description="Fresnel propagation of the wavefront recorded by the "
         "WavefrontActor. Writes the intensity <output-dir>/<base>_D<D>mm_<model>"
-        ".mhd and .json.",
+        ".mhd and .json; D is written in fixed point without trailing zeros "
+        "(50, 12.5, 0.00001).",
     )
     p.add_argument(
         "base",
@@ -120,8 +147,9 @@ def build_parser():
         "--source-distance",
         type=float,
         default=None,
-        help="source to plane distance R1 in mm (cone beam, M = (R1 + D) / R1); "
-        "default: parallel beam",
+        help="source to plane distance R1 in mm (cone beam, M = (R1 + D) / R1; "
+        "the pixel and the origin are scaled by M, the origin relative to the "
+        "optical axis x = y = 0); default: parallel beam",
     )
     p.add_argument(
         "--padding",
@@ -151,7 +179,8 @@ def build_parser():
         metavar=("auto|X0", "X1"),
         default=None,
         help="divide the image by its mean in a flat region: 'auto' (ring of 5 %% "
-        "at the border of the grid) or 'x0 x1 y0 y1' in mm",
+        "at the border of the grid) or 'x0 x1 y0 y1' in mm, in detector "
+        "coordinates (after the scaling by M)",
     )
     p.add_argument(
         "--max-memory-gb",
@@ -187,8 +216,8 @@ def go():
     if args.pad_factor < 1:
         raise SystemExit("--pad-factor must be >= 1.")
 
-    data = fp.read_wavefront(args.base)
-    shape = data.real.shape
+    # checks that need only the JSON, before any MHD is read
+    shape = read_grid_shape(args.base)
     if shape[0] % args.downsample or shape[1] % args.downsample:
         raise SystemExit(
             f"--downsample {args.downsample} does not divide the grid {shape}."
@@ -197,6 +226,7 @@ def go():
     if limit_gb is None:
         limit_gb = 0.8 * total_ram_gb()
     keep_copy = check_memory(shape, args, limit_gb * 1e9)
+    data = fp.read_wavefront(args.base)
 
     lam = fp.wavelength_mm(data.effective_energy_keV)
     pixel = data.spacing_mm
@@ -255,7 +285,7 @@ def go():
                     "source_wavefront": str(args.base),
                 }
             )
-            out = out_dir / f"{name}_D{d:g}mm_{model}.mhd"
+            out = out_dir / f"{name}_D{format_distance(d)}mm_{model}.mhd"
             fp.write_intensity(out, image, det_pixel, det_origin, meta)
             need = estimate_memory_bytes(
                 shape, args.padding, args.pad_factor, keep_copy

@@ -135,6 +135,31 @@ if __name__ == "__main__":
     ok &= not od.exists() or not list(od.glob("*.mhd"))
     is_ok &= utility.print_test(ok, f"memory limit: {msg[:70]!r}")
 
+    # the refusal comes before any MHD is read: JSON declaring 10000^2, no MHD
+    big = out / "big"
+    write_synthetic(str(big), spacing=(PIX, PIX), energy=ENERGY, n=1)
+    for suffix in ("real", "imag", "energy"):
+        Path(f"{big}_{suffix}.mhd").unlink()
+    with open(f"{big}.json") as f:
+        js = json.load(f)
+    js["size"] = [10000, 10000]
+    with open(f"{big}.json", "w") as f:
+        json.dump(js, f)
+    r = run([big, "--distances", 100, "--max-memory-gb", 1, "--output-dir", out])
+    msg = str(r.code) if r is not None else ""
+    ok = "memory" in msg and "not found" not in msg
+    is_ok &= utility.print_test(ok, f"refusal before reading the grids: {msg[:50]!r}")
+    r = run([big, "--distances", 100, "--downsample", 3, "--output-dir", out])
+    msg = str(r.code) if r is not None else ""
+    is_ok &= utility.print_test("downsample" in msg, f"downsample check: {msg[:50]!r}")
+    # file name without loss or scientific notation
+    from opengate.bin.opengate_fresnel_propagate import format_distance
+
+    names = [format_distance(v) for v in (50.0, 12.5, 1e-5, 0.0, 1234567.0)]
+    is_ok &= utility.print_test(
+        names == ["50", "12.5", "0.00001", "0", "1234567"], f"file names {names}"
+    )
+
     # D = 0: Parseval, the output is |Psi|^2
     od = out / "d0"
     run([base, "--distances", 0, "--model", "article", "--output-dir", od])
