@@ -52,6 +52,7 @@ def get_ignored_tests():
         "test094a_spect_simu_prim",  # to compute the reference data
         "test094b_spect_simu_scatter",  # to compute the reference data
         "test094c_build_sinogram",  # to compute the reference data
+        "test142_wavefront_finegrid",  # heavy: 2.4 GB of memory and disk
     ]
 
 

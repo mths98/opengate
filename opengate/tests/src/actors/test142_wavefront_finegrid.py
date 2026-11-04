@@ -13,7 +13,12 @@ test checks that:
 The simulation runs in the main process (start_new_process=False), where the
 grids are used. With start_new_process=True the arrays would be pickled to the
 parent process and the memory would be duplicated: this is not the use case
-tested here. Run this test alone: it is heavy (memory, disk and time).
+tested here. Run this test alone: it is heavy (memory, disk and time). It is
+listed in get_ignored_tests of opengate_tests_helpers.py (the global runner
+discovers the tests by glob), so it is not part of the global run.
+
+The number of worker threads is read from the Geant4 run manager in a hook
+called after the run.
 """
 
 import resource
@@ -34,6 +39,13 @@ N_PIXELS = 10000
 SPACING = 0.1 * um
 N_PHOTONS = 100000
 MAX_RSS_GB = 4.0
+
+def read_threads(simulation_engine):
+    """Hook called after the run: number of threads of the Geant4 MT run
+    manager."""
+    rm = simulation_engine.g4_RunManager
+    simulation_engine.user_hook_log["n_threads"] = rm.GetNumberOfThreads()
+
 
 if __name__ == "__main__":
     paths = utility.get_default_test_paths(__file__, output_folder="test142_finegrid")
@@ -66,6 +78,8 @@ if __name__ == "__main__":
     wf.spacing = [SPACING, SPACING]
     wf.output_filename = "wf.mhd"
 
+    sim.user_hook_after_run = read_threads
+
     sim.run(start_new_process=False)
     t_sim = time.time() - t0
 
@@ -95,25 +109,35 @@ if __name__ == "__main__":
     utility.print_test(ok, f"N = {n} photons counted, none outside the grid")
     is_ok &= ok
 
-    # MHD read back: identical to the arrays
-    base = paths.output / "wf"
-    files = [paths.output / f"wf_{s}.mhd" for s in arrays]
-    for name, f in zip(arrays, files):
-        img = itk.imread(str(f))
-        data = itk.array_from_image(img)
-        ok = data.shape == (N_PIXELS, N_PIXELS)
-        spacing = list(img.GetSpacing())
-        ok &= np.allclose(spacing, [SPACING, SPACING], rtol=0, atol=1e-12)
-        ok &= np.array_equal(data, arrays[name])
-        del data, img
-        utility.print_test(ok, f"MHD {f.name} read back == actor.{name}")
-        is_ok &= ok
+    n_threads = sim.user_hook_log.get("n_threads")
+    ok = n_threads == 4
+    utility.print_test(ok, f"Geant4 MT run manager with {n_threads} threads (4)")
+    is_ok &= ok
 
-    # clean the 2.4 GB written on disk
-    for f in files:
-        f.unlink(missing_ok=True)
-        f.with_suffix(".raw").unlink(missing_ok=True)
-    base.with_suffix(".json").unlink(missing_ok=True)
+    # MHD read back: identical to the arrays. The 2.4 GB written on disk are
+    # always removed, even if a check raises
+    files = [paths.output / f"wf_{s}.mhd" for s in arrays]
+    x0 = -N_PIXELS * SPACING / 2
+    origin = [x0 + SPACING / 2] * 2  # corner + spacing / 2 (JSON convention)
+    try:
+        for name, f in zip(arrays, files):
+            img = itk.imread(str(f))
+            data = itk.array_from_image(img)
+            ok = data.shape == (N_PIXELS, N_PIXELS)
+            spacing = list(img.GetSpacing())
+            ok &= np.allclose(spacing, [SPACING, SPACING], rtol=0, atol=1e-12)
+            ok &= np.allclose(list(img.GetOrigin()), origin, rtol=0, atol=1e-12)
+            ok &= np.array_equal(data, arrays[name])
+            del data, img
+            utility.print_test(ok, f"MHD {f.name} read back == actor.{name}")
+            is_ok &= ok
+
+    finally:
+        base = paths.output / "wf"
+        for f in files:
+            f.unlink(missing_ok=True)
+            f.with_suffix(".raw").unlink(missing_ok=True)
+        base.with_suffix(".json").unlink(missing_ok=True)
     print(f"Total time: {time.time() - t0:.1f} s")
 
     utility.test_ok(is_ok)
