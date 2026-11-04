@@ -17,11 +17,14 @@ from pathlib import Path
 
 import itk
 import numpy as np
+import scipy.fft
 
 # h * c in keV * mm
 HC_KEV_MM = 12.398419843320026e-7
 
 MODELS = ("article", "physical")
+
+PADDINGS = {"none": None, "zero": "constant", "mirror": "symmetric"}
 
 # keys of the JSON file of the WavefrontActor that the propagation needs
 REQUIRED_KEYS = (
@@ -203,6 +206,82 @@ def downsample(image, factor):
     return image.reshape(ny // factor, factor, nx // factor, factor).mean(
         axis=(1, 3)
     )
+
+
+def propagate(
+    field,
+    pixel_mm,
+    wavelength_mm,
+    distance_mm,
+    padding="none",
+    pad_factor=2,
+    workers=-1,
+):
+    """Free-space Fresnel propagation by the transfer function (Eq. 14):
+
+        Psi(z) = IFFT[ FFT[Psi(0)] H ],  H = exp(-i pi lambda z (fx^2 + fy^2)),
+
+    without the global phase exp(i k z). The convention is the one of the recorded
+    field: exp(-i w t), plane wave exp(+i k z), so a diverging wave has the phase
+    +pi r^2 / (lambda R) and a converging lens -pi r^2 / (lambda f).
+
+    field: 2D array of shape (ny, nx); pixel_mm = (dy, dx); the frequencies are
+    scipy.fft.fftfreq(n, d) on each axis. For a cone beam, call it with the pixel
+    of the plane and z_eff (see cone_beam_scaling).
+
+    padding:
+      - "none": the propagation is done in place in the complex128 array (the
+        field itself if it is already a complex128 array), which is returned; the
+        convolution is circular.
+      - "zero" / "mirror": the grid is enlarged pad_factor times on each axis
+        (np.pad, modes "constant" and "symmetric", centred), propagated and
+        cropped back; a new array of the original shape is returned.
+
+    distance_mm = 0 returns the field unchanged (a copy with padding).
+    """
+    if padding not in PADDINGS:
+        raise ValueError(
+            f"Unknown padding '{padding}', expected one of {tuple(PADDINGS)}."
+        )
+    if np.ndim(field) != 2:
+        raise ValueError(f"The field must be a 2D array, got shape {np.shape(field)}.")
+    dy, dx = (float(p) for p in pixel_mm)
+    if dy <= 0 or dx <= 0:
+        raise ValueError(f"The pixel must be positive, got (dy, dx) = {pixel_mm}.")
+    if wavelength_mm <= 0:
+        raise ValueError(f"The wavelength must be positive, got {wavelength_mm}.")
+    pad_factor = int(pad_factor)
+    if padding != "none" and pad_factor < 1:
+        raise ValueError(f"pad_factor must be >= 1, got {pad_factor}.")
+
+    if padding == "none":
+        work = np.asarray(field, dtype=np.complex128)
+    else:
+        field = np.asarray(field, dtype=np.complex128)
+        if distance_mm == 0:
+            return field.copy()
+        ny, nx = field.shape
+        widths = []
+        for n in (ny, nx):
+            extra = (pad_factor - 1) * n
+            widths.append((extra // 2, extra - extra // 2))
+        work = np.pad(field, widths, mode=PADDINGS[padding])
+    if distance_mm == 0:
+        return work
+
+    py, px = work.shape
+    a = -np.pi * wavelength_mm * distance_mm
+    hy = np.exp(1j * a * scipy.fft.fftfreq(py, dy) ** 2)
+    hx = np.exp(1j * a * scipy.fft.fftfreq(px, dx) ** 2)
+    work[...] = scipy.fft.fft2(work, workers=workers, overwrite_x=True)
+    work *= hy[:, None]
+    work *= hx[None, :]
+    work[...] = scipy.fft.ifft2(work, workers=workers, overwrite_x=True)
+
+    if padding == "none":
+        return work
+    (y0, _), (x0, _) = widths
+    return work[y0 : y0 + ny, x0 : x0 + nx].copy()
 
 
 def _json_default(obj):
