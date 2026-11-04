@@ -251,8 +251,13 @@ if __name__ == "__main__":
     roi = np.abs(xs) <= 0.02
     xr = xs[roi]
     ref = i_dir[np.ix_(roi, roi)]
-    # module: plane pixel in the FFT, z_eff, / M^2, detector coordinates x M
-    i_mod = fp.intensity(fp.propagate(obj.copy(), (d, d), LAM, z_eff), m)
+    # module recipe: plane pixel in the FFT, z_eff, / M^2, detector coordinates x M
+    i_mod, det_pix, det_org, meta = fp.propagate_to_detector(
+        obj.copy(), (d, d), (xs[0], xs[0]), LAM, dist, source_distance_mm=r1
+    )
+    ok = meta["M"] == m and meta["z_eff_mm"] == z_eff
+    ok &= det_pix == (d * m, d * m) and det_org == (xs[0] * m, xs[0] * m)
+    is_ok &= utility.print_test(ok, "T5 propagate_to_detector meta and pixel x M")
     i_mod = spline_on(i_mod, xs * m, xr, xr)
     e_mod = np.max(np.abs(i_mod - ref)) / np.max(ref)
     contrast = (ref.max() - ref.min()) / ref.max()
@@ -286,6 +291,17 @@ if __name__ == "__main__":
         ok,
         f"T7 max of |Psi|^2 on the 32 columns of the opposite (left) border / max: "
         f"none {left['none']:.3f}, zero {left['zero']:.1e}",
+    )
+    # mirror: a constant field stays constant, and the periodic wrap-around
+    # fringe disappears as with zero padding
+    flat = np.ones((64, 128), np.complex128)
+    out = fp.propagate(flat.copy(), (d, d), LAM, zp, padding="mirror")
+    err = np.max(np.abs(out - 1))
+    ok = err < 1e-12 and left["mirror"] < 1e-2
+    is_ok &= utility.print_test(
+        ok,
+        f"T7 mirror: constant field err. {err:.1e}, opposite border "
+        f"{left['mirror']:.1e}",
     )
     out = fp.propagate(psi, (d, d), LAM, zp, padding="zero")
     ok = out is not psi and np.all(psi[:, nx - 12 : nx - 4] == 1.0)

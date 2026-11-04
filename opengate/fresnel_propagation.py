@@ -284,6 +284,65 @@ def propagate(
     return work[y0 : y0 + ny, x0 : x0 + nx].copy()
 
 
+def propagate_to_detector(
+    field,
+    pixel_mm,
+    origin_mm,
+    wavelength_mm,
+    distance_mm,
+    source_distance_mm=None,
+    padding="none",
+    pad_factor=2,
+    workers=-1,
+):
+    """Intensity on the detector at distance_mm from the plane of the field.
+
+    The single implementation of the recipe (cone beam: Fresnel scaling theorem):
+    cone_beam_scaling -> propagate with z_eff and the pixel of the plane ->
+    intensity / M^2 -> pixel and origin times M. source_distance_mm = None is a
+    parallel beam (M = 1).
+
+    pixel_mm and origin_mm are (y, x) pairs; origin_mm is the centre of the first
+    pixel, relative to the optical axis x = y = 0 (which is the point that the
+    magnification keeps fixed). With padding="none" the array field is modified
+    in place (see propagate): pass a copy to keep it.
+
+    Returns (image, detector_pixel_mm, detector_origin_mm, meta); meta holds
+    distance_mm, z_eff_mm, M, wavelength_mm, fresnel_number_10px (for the pixel of
+    the plane and z_eff) and the result of check_sampling (padding included).
+    """
+    m, z_eff = cone_beam_scaling(source_distance_mm, distance_mm)
+    psi = propagate(
+        field, pixel_mm, wavelength_mm, z_eff, padding, pad_factor, workers
+    )
+    image = intensity(psi, m)
+    ny, nx = np.shape(field)
+    factor = 1 if padding == "none" else int(pad_factor)
+    # the criterion is checked on each axis; the worst one (pixel / critical) is kept
+    checks = [
+        check_sampling(pixel_mm[i], n * pixel_mm[i] * factor, wavelength_mm, z_eff)
+        for i, n in enumerate((ny, nx))
+    ]
+    ratios = [c["critical_pixel_mm"] / pixel_mm[i] for i, c in enumerate(checks)]
+    sampling = checks[int(np.argmax(ratios))]
+    pix = max(pixel_mm)
+    f10 = fresnel_number(pix, wavelength_mm, z_eff) if z_eff > 0 else None
+    meta = {
+        "distance_mm": float(distance_mm),
+        "source_distance_mm": source_distance_mm,
+        "z_eff_mm": z_eff,
+        "M": m,
+        "wavelength_mm": float(wavelength_mm),
+        "fresnel_number_10px": f10,
+        "padding": padding,
+        "pad_factor": int(pad_factor) if padding != "none" else 1,
+        "sampling": sampling,
+    }
+    det_pixel = (float(pixel_mm[0]) * m, float(pixel_mm[1]) * m)
+    det_origin = (float(origin_mm[0]) * m, float(origin_mm[1]) * m)
+    return image, det_pixel, det_origin, meta
+
+
 def _json_default(obj):
     """Convert numpy scalars and arrays to native Python types for json.dump."""
     if isinstance(obj, np.generic):

@@ -16,39 +16,9 @@ import numpy as np
 
 import opengate.tests.utility as utility
 from opengate import fresnel_propagation as fp
+from test143_fresnel_helpers import write_synthetic
 
 HC_KEV_MM = 12.398419843320026e-7
-
-
-def write_synthetic(base, ny=6, nx=4, spacing=(0.002, 0.001), energy=20.0, n=5):
-    """Write a wavefront in the format of the WavefrontActor. spacing = (dy, dx)."""
-    rng = np.random.default_rng(1)
-    dy, dx = spacing
-    corner = (-nx * dx / 2, -ny * dy / 2)  # (x0, y0) as in the JSON
-    grids = {s: rng.normal(size=(ny, nx)) for s in ("real", "imag")}
-    grids["energy"] = rng.uniform(0.0, 2.0, size=(ny, nx))  # energy is >= 0
-    for s, g in grids.items():
-        img = itk.image_view_from_array(g)
-        img.SetSpacing([dx, dy])
-        img.SetOrigin([corner[0] + dx / 2, corner[1] + dy / 2])
-        itk.imwrite(img, f"{base}_{s}.mhd")
-    meta = {
-        "n_photons_counted": n,
-        "n_outside_grid": 0,
-        "n_recrossings": 0,
-        "n_backward_crossings": 0,
-        "effective_energy_keV": energy,
-        "plane_z_mm": 10.0,
-        "plane_center_mm": [0.0, 0.0],
-        "grid_corner_mm": [corner[0], corner[1]],
-        "mhd_offset_convention": "center of first pixel",
-        "size": [nx, ny],
-        "spacing_mm": [dx, dy],
-        "kill_after_plane": False,
-    }
-    with open(f"{base}.json", "w") as f:
-        json.dump(meta, f)
-    return grids, meta
 
 
 def raises(fn, *args, **kwargs):
