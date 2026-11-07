@@ -4,12 +4,15 @@
 """The WavefrontActor (kill_after_plane=False) only observes the transport.
 
 A PMMA sphere (xray_phase_contrast on) is crossed by a parallel 20 keV beam.
-Three runs, each in its own process (Geant4 does not restart), with the same
-seed, two threads and the same geometry (the thin vacuum detector is always
+Four runs (A, B, C and the informative D), each in its own process (Geant4 does not restart), with the same
+seed and the same geometry (the thin vacuum detector is always
 present, only the actors change). The runs use one random seed per event
 (/run/eventModulo 1 0): with the GATE default (a seed every 10000 events),
 killing a photon at the plane consumes fewer random numbers and shifts the
 following events, so A and B would differ by statistics, not by physics.
+Multithreaded mode is forced with a single worker thread (the per-event
+seeding needs the MT run manager): the result is deterministic by
+construction, with no floating-point summation order between threads.
 
   (A) WavefrontActor (kill_after_plane=False) + FluenceActor
   (B) WavefrontActor alone (kill_after_plane=True)
@@ -17,14 +20,13 @@ following events, so A and B would differ by statistics, not by physics.
 
 Checks, all by exact equality (no tolerance):
   - real, imag and energy grids of A and B are identical;
-  - the counters of A and B are identical. The actor has no counter that
-    depends on the kill (n_photons_counted, n_outside_grid, n_recrossings,
-    n_backward_crossings and sum_energy_keV are all compared); with a vacuum
-    path after the plane the killed photons would not cross it again anyway;
+  - the counters of A and B are identical (n_photons_counted, n_outside_grid,
+    n_recrossings, n_backward_crossings and sum_energy_keV): the counters do
+    not depend on the kill (checked by equality);
   - the counts and the energy of the FluenceActor are identical in A and C,
     i.e. adding the WavefrontActor does not change the transport.
 A fourth run (D) is B with the default seeding; the number of wavefront pixels
-that differ from A is printed as information only, it is not a check.
+that differ from B is printed as information only, it is not a check.
 Sanity controls: the grid of A is not all zero and the fluence of C has
 counts > 0.
 
@@ -61,7 +63,8 @@ def simulate(paths, run):
     """One run, in the current process. Writes the MHD files in paths.output."""
     sim = gate.Simulation()
     sim.output_dir = paths.output
-    sim.number_of_threads = 2
+    sim.number_of_threads = 1
+    sim.force_multithread_mode = True
     sim.visu = False
     sim.progress_bar = False
     sim.random_seed = 123456
@@ -180,7 +183,7 @@ if __name__ == "__main__":
     )
     is_ok &= ok
 
-    n_diff = int(np.count_nonzero(a["energy"] != d["energy"]))
-    print(f"info: default seeding (D, like B) vs A: {n_diff} energy pixels differ")
+    n_diff = int(np.count_nonzero(b["energy"] != d["energy"]))
+    print(f"info: default seeding (D) vs B: {n_diff} energy pixels differ")
 
     utility.test_ok(is_ok)
