@@ -4,14 +4,14 @@
 """The WavefrontActor (kill_after_plane=False) only observes the transport.
 
 A PMMA sphere (xray_phase_contrast on) is crossed by a parallel 20 keV beam.
-Four runs (A, B, C and the informative D), each in its own process (Geant4 does not restart), with the same
-seed and the same geometry (the thin vacuum detector is always
-present, only the actors change). The runs use one random seed per event
-(/run/eventModulo 1 0): with the GATE default (a seed every 10000 events),
-killing a photon at the plane consumes fewer random numbers and shifts the
-following events, so A and B would differ by statistics, not by physics.
-Multithreaded mode is forced with a single worker thread (the per-event
-seeding needs the MT run manager): the result is deterministic by
+Four runs (A, B, C and the informative D), each in its own process (Geant4
+does not restart), with the same seed and the same geometry (the thin vacuum
+detector is always present, only the actors change). The runs use one random
+seed per event (/run/eventModulo 1 0): with the GATE default (a seed every
+10000 events), killing a photon at the plane consumes fewer random numbers
+and shifts the following events, so A and B would differ by statistics, not
+by physics. Multithreaded mode is forced with a single worker thread (the
+per-event seeding needs the MT run manager): the result is deterministic by
 construction, with no floating-point summation order between threads.
 
   (A) WavefrontActor (kill_after_plane=False) + FluenceActor
